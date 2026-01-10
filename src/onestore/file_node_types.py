@@ -71,6 +71,74 @@ class RevisionManifestListStartFND:
     n_instance: int
 
 
+DEFAULT_CONTEXT_GCTXID = ExtendedGUID(guid=b"\x00" * 16, n=0)
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionManifestStart4FND:
+    """RevisionManifestStart4FND (0x01B) — start of a revision manifest in .onetoc2.
+
+    odcsDefault MUST be 0 and MUST be ignored.
+    timeCreation MUST be ignored.
+    """
+
+    rid: ExtendedGUID
+    rid_dependent: ExtendedGUID
+    revision_role: int
+    odcs_default: int
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionManifestStart6FND:
+    """RevisionManifestStart6FND (0x01E) — start of a revision manifest for default context in .one."""
+
+    rid: ExtendedGUID
+    rid_dependent: ExtendedGUID
+    revision_role: int
+    odcs_default: int
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionManifestStart7FND:
+    """RevisionManifestStart7FND (0x01F) — start of a revision manifest for a specific context in .one."""
+
+    base: RevisionManifestStart6FND
+    gctxid: ExtendedGUID
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionManifestEndFND:
+    """RevisionManifestEndFND (0x01C) — end of a revision manifest. MUST contain no data."""
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionRoleDeclarationFND:
+    """RevisionRoleDeclarationFND (0x05C) — add revision role for default context."""
+
+    rid: ExtendedGUID
+    revision_role: int
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionRoleAndContextDeclarationFND:
+    """RevisionRoleAndContextDeclarationFND (0x05D) — add revision role for a specific context."""
+
+    rid: ExtendedGUID
+    revision_role: int
+    gctxid: ExtendedGUID
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectDataEncryptionKeyV2FNDX:
+    """ObjectDataEncryptionKeyV2FNDX (0x07C, BaseType=2) — encryption marker.
+
+    Contains a FileNodeChunkReference (already parsed into FileNode.chunk_ref).
+    The referenced structure's contents are currently ignored (Step 10 scope).
+    """
+
+    ref: FileNodeChunkReference
+
+
 KnownFileNodeType = (
     ObjectSpaceManifestRootFND
     | ObjectSpaceManifestListReferenceFND
@@ -78,6 +146,13 @@ KnownFileNodeType = (
     | ObjectSpaceManifestListStartFND
     | RevisionManifestListReferenceFND
     | RevisionManifestListStartFND
+    | RevisionManifestStart4FND
+    | RevisionManifestStart6FND
+    | RevisionManifestStart7FND
+    | RevisionManifestEndFND
+    | RevisionRoleDeclarationFND
+    | RevisionRoleAndContextDeclarationFND
+    | ObjectDataEncryptionKeyV2FNDX
 )
 
 
@@ -240,12 +315,268 @@ def _parse_revision_manifest_list_start_fnd(node: FileNode, ctx: ParseContext) -
     return RevisionManifestListStartFND(gosid=gosid, n_instance=int(n_instance))
 
 
+def _require_base_type(
+    node: FileNode,
+    expected: int,
+    *,
+    ctx: ParseContext,
+    message: str,
+) -> None:
+    if node.header.base_type != expected:
+        if ctx.strict:
+            raise OneStoreFormatError(message, offset=node.header.offset)
+        ctx.warn(message, offset=node.header.offset)
+
+
+def _parse_revision_manifest_start4_fnd(node: FileNode, ctx: ParseContext) -> RevisionManifestStart4FND:
+    # Spec (2.5.6): rid (20) + ridDependent (20) + timeCreation (8 ignore) + RevisionRole (4) + odcsDefault (2 must be 0 ignore)
+    _require_base_type(node, 0, ctx=ctx, message="RevisionManifestStart4FND MUST have BaseType==0")
+    if node.chunk_ref is not None:
+        raise OneStoreFormatError(
+            "RevisionManifestStart4FND MUST not contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 54:
+        raise OneStoreFormatError(
+            "RevisionManifestStart4FND payload MUST be 54 bytes",
+            offset=node.header.offset,
+        )
+
+    r = BinaryReader(node.fnd)
+    rid = ExtendedGUID.parse(r)
+    rid_dependent = ExtendedGUID.parse(r)
+    _ = r.read_u64()  # timeCreation: MUST be ignored
+    revision_role = int(r.read_u32())
+    odcs_default = int(r.read_u16())
+
+    if r.remaining() != 0:
+        raise OneStoreFormatError(
+            "RevisionManifestStart4FND parse did not consume full payload",
+            offset=node.header.offset,
+        )
+
+    if rid.is_zero():
+        raise OneStoreFormatError(
+            "RevisionManifestStart4FND.rid MUST NOT be zero",
+            offset=node.header.offset,
+        )
+
+    if odcs_default != 0:
+        msg = "RevisionManifestStart4FND.odcsDefault MUST be 0 (and MUST be ignored)"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
+
+    return RevisionManifestStart4FND(
+        rid=rid,
+        rid_dependent=rid_dependent,
+        revision_role=revision_role,
+        odcs_default=odcs_default,
+    )
+
+
+def _parse_revision_manifest_start6_fnd(node: FileNode, ctx: ParseContext) -> RevisionManifestStart6FND:
+    # Spec (2.5.7): rid (20) + ridDependent (20) + RevisionRole (4) + odcsDefault (2)
+    _require_base_type(node, 0, ctx=ctx, message="RevisionManifestStart6FND MUST have BaseType==0")
+    if node.chunk_ref is not None:
+        raise OneStoreFormatError(
+            "RevisionManifestStart6FND MUST not contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 46:
+        raise OneStoreFormatError(
+            "RevisionManifestStart6FND payload MUST be 46 bytes",
+            offset=node.header.offset,
+        )
+
+    r = BinaryReader(node.fnd)
+    rid = ExtendedGUID.parse(r)
+    rid_dependent = ExtendedGUID.parse(r)
+    revision_role = int(r.read_u32())
+    odcs_default = int(r.read_u16())
+    if r.remaining() != 0:
+        raise OneStoreFormatError(
+            "RevisionManifestStart6FND parse did not consume full payload",
+            offset=node.header.offset,
+        )
+
+    if rid.is_zero():
+        raise OneStoreFormatError(
+            "RevisionManifestStart6FND.rid MUST NOT be zero",
+            offset=node.header.offset,
+        )
+
+    if odcs_default not in (0x0000, 0x0002):
+        msg = "RevisionManifestStart6FND.odcsDefault MUST be 0x0000 or 0x0002"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
+
+    return RevisionManifestStart6FND(
+        rid=rid,
+        rid_dependent=rid_dependent,
+        revision_role=revision_role,
+        odcs_default=odcs_default,
+    )
+
+
+def _parse_revision_manifest_start7_fnd(node: FileNode, ctx: ParseContext) -> RevisionManifestStart7FND:
+    # Spec (2.5.8): base (Start6, 46 bytes) + gctxid (20 bytes)
+    _require_base_type(node, 0, ctx=ctx, message="RevisionManifestStart7FND MUST have BaseType==0")
+    if node.chunk_ref is not None:
+        raise OneStoreFormatError(
+            "RevisionManifestStart7FND MUST not contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 66:
+        raise OneStoreFormatError(
+            "RevisionManifestStart7FND payload MUST be 66 bytes",
+            offset=node.header.offset,
+        )
+
+    r = BinaryReader(node.fnd)
+    rid = ExtendedGUID.parse(r)
+    rid_dependent = ExtendedGUID.parse(r)
+    revision_role = int(r.read_u32())
+    odcs_default = int(r.read_u16())
+    gctxid = ExtendedGUID.parse(r)
+    if r.remaining() != 0:
+        raise OneStoreFormatError(
+            "RevisionManifestStart7FND parse did not consume full payload",
+            offset=node.header.offset,
+        )
+
+    base = RevisionManifestStart6FND(
+        rid=rid,
+        rid_dependent=rid_dependent,
+        revision_role=revision_role,
+        odcs_default=odcs_default,
+    )
+
+    if rid.is_zero():
+        raise OneStoreFormatError(
+            "RevisionManifestStart7FND.base.rid MUST NOT be zero",
+            offset=node.header.offset,
+        )
+
+    if odcs_default not in (0x0000, 0x0002):
+        msg = "RevisionManifestStart7FND.base.odcsDefault MUST be 0x0000 or 0x0002"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
+
+    return RevisionManifestStart7FND(base=base, gctxid=gctxid)
+
+
+def _parse_revision_manifest_end_fnd(node: FileNode, ctx: ParseContext) -> RevisionManifestEndFND:
+    _require_base_type(node, 0, ctx=ctx, message="RevisionManifestEndFND MUST have BaseType==0")
+    if node.chunk_ref is not None:
+        raise OneStoreFormatError(
+            "RevisionManifestEndFND MUST not contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 0:
+        raise OneStoreFormatError(
+            "RevisionManifestEndFND MUST contain no data",
+            offset=node.header.offset,
+        )
+    return RevisionManifestEndFND()
+
+
+def _parse_revision_role_declaration_fnd(node: FileNode, ctx: ParseContext) -> RevisionRoleDeclarationFND:
+    _require_base_type(node, 0, ctx=ctx, message="RevisionRoleDeclarationFND MUST have BaseType==0")
+    if node.chunk_ref is not None:
+        raise OneStoreFormatError(
+            "RevisionRoleDeclarationFND MUST not contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 24:
+        raise OneStoreFormatError(
+            "RevisionRoleDeclarationFND payload MUST be 24 bytes",
+            offset=node.header.offset,
+        )
+
+    r = BinaryReader(node.fnd)
+    rid = ExtendedGUID.parse(r)
+    revision_role = int(r.read_u32())
+    if r.remaining() != 0:
+        raise OneStoreFormatError(
+            "RevisionRoleDeclarationFND parse did not consume full payload",
+            offset=node.header.offset,
+        )
+
+    if rid.is_zero():
+        msg = "RevisionRoleDeclarationFND.rid MUST NOT be zero"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
+
+    return RevisionRoleDeclarationFND(rid=rid, revision_role=revision_role)
+
+
+def _parse_revision_role_and_context_declaration_fnd(
+    node: FileNode, ctx: ParseContext
+) -> RevisionRoleAndContextDeclarationFND:
+    _require_base_type(node, 0, ctx=ctx, message="RevisionRoleAndContextDeclarationFND MUST have BaseType==0")
+    if node.chunk_ref is not None:
+        raise OneStoreFormatError(
+            "RevisionRoleAndContextDeclarationFND MUST not contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 44:
+        raise OneStoreFormatError(
+            "RevisionRoleAndContextDeclarationFND payload MUST be 44 bytes",
+            offset=node.header.offset,
+        )
+
+    r = BinaryReader(node.fnd)
+    rid = ExtendedGUID.parse(r)
+    revision_role = int(r.read_u32())
+    gctxid = ExtendedGUID.parse(r)
+    if r.remaining() != 0:
+        raise OneStoreFormatError(
+            "RevisionRoleAndContextDeclarationFND parse did not consume full payload",
+            offset=node.header.offset,
+        )
+
+    if rid.is_zero():
+        msg = "RevisionRoleAndContextDeclarationFND.rid MUST NOT be zero"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
+
+    return RevisionRoleAndContextDeclarationFND(rid=rid, revision_role=revision_role, gctxid=gctxid)
+
+
+def _parse_object_data_encryption_key_v2_fndx(node: FileNode, ctx: ParseContext) -> ObjectDataEncryptionKeyV2FNDX:
+    # Spec (2.5.19): BaseType=2 and the payload is empty; ref is in FileNodeChunkReference.
+    _require_base_type(node, 2, ctx=ctx, message="ObjectDataEncryptionKeyV2FNDX MUST have BaseType==2")
+    if node.chunk_ref is None:
+        raise OneStoreFormatError(
+            "ObjectDataEncryptionKeyV2FNDX MUST contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 0:
+        raise OneStoreFormatError(
+            "ObjectDataEncryptionKeyV2FNDX MUST contain no data beyond FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    return ObjectDataEncryptionKeyV2FNDX(ref=node.chunk_ref)
+
+
 FILE_NODE_TYPE_PARSERS: dict[int, FileNodeTypeParser] = {
     0x004: _parse_object_space_manifest_root_fnd,
     0x008: _parse_object_space_manifest_list_reference_fnd,
     0x00C: _parse_object_space_manifest_list_start_fnd,
     0x010: _parse_revision_manifest_list_reference_fnd,
     0x014: _parse_revision_manifest_list_start_fnd,
+    0x01B: _parse_revision_manifest_start4_fnd,
+    0x01C: _parse_revision_manifest_end_fnd,
+    0x01E: _parse_revision_manifest_start6_fnd,
+    0x01F: _parse_revision_manifest_start7_fnd,
+    0x05C: _parse_revision_role_declaration_fnd,
+    0x05D: _parse_revision_role_and_context_declaration_fnd,
+    0x07C: _parse_object_data_encryption_key_v2_fndx,
     0x090: _parse_file_data_store_list_reference_fnd,
 }
 

@@ -15,6 +15,7 @@ from onestore.errors import OneStoreFormatError  # noqa: E402
 from onestore.header import GUID_FILE_FORMAT, GUID_FILE_TYPE_ONE, Header  # noqa: E402
 from onestore.io import BinaryReader  # noqa: E402
 from onestore.object_space import parse_object_spaces_summary  # noqa: E402
+from onestore.object_space import parse_object_spaces_with_revisions  # noqa: E402
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
@@ -318,6 +319,55 @@ class TestIntegrationSimpleTable(unittest.TestCase):
             self.assertIsInstance(rev_list.nodes[0].typed, RevisionManifestListStartFND)
             assert isinstance(rev_list.nodes[0].typed, RevisionManifestListStartFND)
             self.assertEqual(rev_list.nodes[0].typed.gosid, os.gosid)
+
+    def test_revision_manifest_list_parsing_step10_is_deterministic_and_valid(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        out1 = parse_object_spaces_with_revisions(data, ctx=ParseContext(strict=True, file_size=file_size))
+        out2 = parse_object_spaces_with_revisions(data, ctx=ParseContext(strict=True, file_size=file_size))
+        self.assertEqual(out1, out2)
+
+        self.assertGreaterEqual(len(out1.object_spaces), 1)
+
+        for os in out1.object_spaces:
+            # Revisions list itself is deterministic.
+            self.assertIsInstance(os.revisions, tuple)
+
+            # MUST: rid MUST NOT be zero and MUST be unique in list.
+            seen: set[tuple[bytes, int]] = set()
+            rid_order: list[tuple[bytes, int]] = []
+            for rev in os.revisions:
+                self.assertFalse(rev.rid.is_zero())
+                key = (rev.rid.guid, int(rev.rid.n))
+                self.assertNotIn(key, seen)
+                seen.add(key)
+                rid_order.append(key)
+
+                # Dependency rule: if set, it must refer to an earlier revision in this list.
+                if not rev.rid_dependent.is_zero():
+                    dep_key = (rev.rid_dependent.guid, int(rev.rid_dependent.n))
+                    self.assertIn(dep_key, seen)
+
+                # Encryption marker rule: if odcsDefault indicates encrypted, marker must be present.
+                if rev.odcs_default == 0x0002:
+                    self.assertTrue(rev.has_encryption_marker)
+
+            # MUST: last assignment wins for (context, role) pairs.
+            # We validate internal consistency: each mapping points to an existing revision.
+            for pair, rid in os.role_assignments:
+                rid_key = (rid.guid, int(rid.n))
+                self.assertIn(rid_key, seen)
+                self.assertIsInstance(pair.revision_role, int)
+                self.assertIsNotNone(pair.gctxid)
+
+            # Determinism guard: assigned_pairs across revisions are stable and only reference declared mappings.
+            mapping = {(p.gctxid.guid, int(p.gctxid.n), int(p.revision_role)): (r.guid, int(r.n)) for p, r in os.role_assignments}
+            for rev in os.revisions:
+                for ap in rev.assigned_pairs:
+                    key = (ap.gctxid.guid, int(ap.gctxid.n), int(ap.revision_role))
+                    self.assertIn(key, mapping)
+                    self.assertEqual(mapping[key], (rev.rid.guid, int(rev.rid.n)))
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)
