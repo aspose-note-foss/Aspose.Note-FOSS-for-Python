@@ -71,7 +71,9 @@ def parse_file_node(
 
     This is a *generic* parser: it decodes the header, enforces MUST bounds and
     BaseType rules, and optionally parses the leading FileNodeChunkReference.
-    Unknown FileNodeIDs are preserved as raw bytes with a warning.
+
+    FileNodeID-specific routing (including unknown-ID warnings) is handled by
+    higher-level code (see file_node_types.py).
     """
 
     start = reader.tell()
@@ -118,13 +120,5 @@ def parse_file_node(
     reader.skip(payload_size)
     if reader.tell() != start + header.size:
         raise OneStoreFormatError("FileNode did not consume declared Size", offset=header.offset)
-
-    # Unknown handler: warn but keep raw bytes.
-    if warn_unknown_ids is None:
-        ctx.warn(f"Unknown FileNodeID 0x{header.file_node_id:03X}", offset=header.offset)
-    else:
-        if header.file_node_id not in warn_unknown_ids:
-            warn_unknown_ids.add(header.file_node_id)
-            ctx.warn(f"Unknown FileNodeID 0x{header.file_node_id:03X}", offset=header.offset)
 
     return FileNode(header=header, chunk_ref=chunk_ref, payload=payload, fnd=fnd)

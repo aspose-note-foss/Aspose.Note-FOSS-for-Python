@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from .chunk_refs import FileChunkReference64x32
 from .errors import OneStoreFormatError
 from .file_node_core import FileNode, parse_file_node
+from .file_node_types import TypedFileNode, parse_typed_file_node
 from .io import BinaryReader
 from .parse_context import ParseContext
 
@@ -235,6 +236,12 @@ class FileNodeListWithRaw:
 class FileNodeListWithNodes:
     list: FileNodeList
     nodes: tuple[FileNode, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FileNodeListWithTypedNodes:
+    list: FileNodeList
+    nodes: tuple[TypedFileNode, ...]
 
 
 def parse_file_node_list(
@@ -494,3 +501,42 @@ def parse_file_node_list_nodes(
         nodes.append(parse_file_node(node_reader, ctx=ctx, warn_unknown_ids=warn_once))
 
     return FileNodeListWithNodes(list=out.list, nodes=tuple(nodes))
+
+
+def parse_file_node_list_typed_nodes(
+    reader: BinaryReader,
+    first_fragment: FileChunkReference64x32,
+    *,
+    last_count_by_list_id: dict[int, int] | None = None,
+    ctx: ParseContext | None = None,
+) -> FileNodeListWithTypedNodes:
+    """Parse a File Node List (2.4) and route FileNodes into known typed structures.
+
+    This does not change the existing core parsing behavior; it builds on top of
+    parse_file_node_list_with_raw and parse_file_node.
+
+    Unknown FileNodeIDs produce a warning (once per id) and keep raw bytes.
+    """
+
+    if ctx is None:
+        ctx = ParseContext(strict=True)
+
+    if reader.bounds.start != 0:
+        raise OneStoreFormatError("FileNodeList must be parsed from file start", offset=reader.bounds.start)
+
+    out = parse_file_node_list_with_raw(
+        reader,
+        first_fragment,
+        last_count_by_list_id=last_count_by_list_id,
+        ctx=ctx,
+    )
+
+    warn_once: set[int] = set()
+    typed_nodes: list[TypedFileNode] = []
+    for rn in out.raw_nodes:
+        node_reader = reader.view(rn.header.offset, rn.header.size)
+        node = parse_file_node(node_reader, ctx=ctx)
+        tn = parse_typed_file_node(node, ctx=ctx, warn_unknown_ids=warn_once)
+        typed_nodes.append(TypedFileNode(node=tn.node, typed=tn.typed, raw_bytes=rn.raw_bytes))
+
+    return FileNodeListWithTypedNodes(list=out.list, nodes=tuple(typed_nodes))

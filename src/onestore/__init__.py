@@ -6,8 +6,10 @@ from .file_node_list import (
     FileNodeList,
     FileNodeListWithNodes,
     FileNodeListWithRaw,
+    FileNodeListWithTypedNodes,
     parse_file_node_list,
     parse_file_node_list_nodes,
+    parse_file_node_list_typed_nodes,
     parse_file_node_list_with_raw,
 )
 from .io import BinaryReader
@@ -19,11 +21,13 @@ __all__ = [
     "FileNodeList",
     "FileNodeListWithNodes",
     "FileNodeListWithRaw",
+    "FileNodeListWithTypedNodes",
     "OneStoreFormatError",
     "OneStoreWarning",
     "ParseWarning",
     "parse_file_node_list",
     "parse_file_node_list_nodes",
+    "parse_file_node_list_typed_nodes",
     "parse_file_node_list_with_raw",
     "parse_transaction_log",
 ]

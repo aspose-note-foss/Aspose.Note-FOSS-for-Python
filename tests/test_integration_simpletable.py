@@ -17,7 +17,16 @@ from onestore.io import BinaryReader  # noqa: E402
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
-from onestore.file_node_list import parse_file_node_list, parse_file_node_list_nodes  # noqa: E402
+from onestore.file_node_list import (  # noqa: E402
+    parse_file_node_list,
+    parse_file_node_list_nodes,
+    parse_file_node_list_typed_nodes,
+)
+from onestore.file_node_types import (  # noqa: E402
+    ObjectSpaceManifestListReferenceFND,
+    ObjectSpaceManifestRootFND,
+    build_root_file_node_list_manifests,
+)
 
 
 def _simpletable_path() -> Path | None:
@@ -202,6 +211,55 @@ class TestIntegrationSimpleTable(unittest.TestCase):
         self.assertEqual(
             [(n.header.file_node_id, n.header.size, n.header.base_type) for n in out.nodes],
             [(n.header.file_node_id, n.header.size, n.header.base_type) for n in out2.nodes],
+        )
+
+    def test_parse_root_file_node_list_typed_nodes_and_manifest_invariants(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        header = Header.parse(BinaryReader(data))
+        last_count_by_list_id = parse_transaction_log(
+            BinaryReader(data),
+            header,
+            ParseContext(strict=True, file_size=file_size),
+        )
+
+        ctx = ParseContext(strict=True, file_size=file_size)
+        out = parse_file_node_list_typed_nodes(
+            BinaryReader(data),
+            header.fcr_file_node_list_root,
+            last_count_by_list_id=last_count_by_list_id,
+            ctx=ctx,
+        )
+
+        self.assertEqual(len(out.nodes), out.list.node_count)
+        self.assertGreaterEqual(out.list.node_count, 1)
+
+        # Root list MUST contain only allowed root list types (Step 8).
+        for tn in out.nodes:
+            self.assertIn(tn.node.header.file_node_id, (0x004, 0x008, 0x090))
+            # If the fixture gains 0x090 later, the parser should handle it.
+            if tn.node.header.file_node_id == 0x004:
+                self.assertIsInstance(tn.typed, ObjectSpaceManifestRootFND)
+            if tn.node.header.file_node_id == 0x008:
+                self.assertIsInstance(tn.typed, ObjectSpaceManifestListReferenceFND)
+
+        # MUST: root gosid must match one of object space refs.
+        manifests = build_root_file_node_list_manifests(out.nodes, ctx=ctx)
+        self.assertTrue(
+            any(r.gosid == manifests.root.gosid_root for r in manifests.object_space_refs),
+        )
+
+        # Determinism: typed parse is stable.
+        out2 = parse_file_node_list_typed_nodes(
+            BinaryReader(data),
+            header.fcr_file_node_list_root,
+            last_count_by_list_id=last_count_by_list_id,
+            ctx=ParseContext(strict=True, file_size=file_size),
+        )
+        self.assertEqual(
+            [(tn.node.header.file_node_id, type(tn.typed).__name__ if tn.typed else None) for tn in out.nodes],
+            [(tn.node.header.file_node_id, type(tn.typed).__name__ if tn.typed else None) for tn in out2.nodes],
         )
 
     def test_binary_reader_view_matches_slices(self) -> None:
