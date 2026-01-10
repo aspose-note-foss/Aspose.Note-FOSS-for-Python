@@ -1,0 +1,37 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test / coverage caches
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Packaging / build outputs
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Type checkers / linters
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# IDE / OS noise
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
+
+# If you use VS Code, keep settings under version control by default.
+# Uncomment to ignore local VS Code config:
+# .vscode/
