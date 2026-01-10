@@ -2,6 +2,7 @@ import re
 import sys
 import unittest
 import uuid
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,7 @@ from onestore.file_data import (  # noqa: E402
 from onestore.hashed_chunk_list import (  # noqa: E402
     parse_hashed_chunk_list_entries,
 )
+from onestore.summary import build_simpletable_summary  # noqa: E402
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
@@ -594,6 +596,18 @@ class TestIntegrationSimpleTable(unittest.TestCase):
             ctx=ParseContext(strict=True, file_size=file_size),
             validate_md5=True,
         )
+
+    def test_step16_simpletable_snapshot_summary_matches(self) -> None:
+        data = self.data
+        file_size = len(data)
+        snap_path = ROOT / "tests" / "snapshots" / "simpletable_summary.json"
+        if not snap_path.exists():
+            raise unittest.SkipTest("Snapshot file missing: tests/snapshots/simpletable_summary.json")
+
+        current = build_simpletable_summary(data, ctx=ParseContext(strict=True, file_size=file_size)).data
+        expected = json.loads(snap_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(current, expected)
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)

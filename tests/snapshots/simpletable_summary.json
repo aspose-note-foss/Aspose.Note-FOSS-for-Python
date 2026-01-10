@@ -1,0 +1,357 @@
+{
+  "fileDataStore": {
+    "guidReferenceCount": 0,
+    "guidReferences": []
+  },
+  "fileNodeIdCounts": {
+    "fileDataStoreList": {},
+    "objectGroupsTotal": {
+      "0x022": 27,
+      "0x024": 80,
+      "0x028": 27,
+      "0x08C": 27,
+      "0x0A4": 134,
+      "0x0B4": 27,
+      "0x0B8": 27,
+      "0x0C4": 18
+    },
+    "rootList": {
+      "0x004": 1,
+      "0x008": 2
+    }
+  },
+  "fixture": {
+    "byteSize": 30472,
+    "crc32Rfc3309": 2008427478
+  },
+  "hashedChunkList": {
+    "entryCount": 9
+  },
+  "header": {
+    "cTransactionsInLog": 48,
+    "guidFileFormat": "109add3f-911b-49f5-a5d0-1791edc8aed8",
+    "guidFileType": "7b5c52e4-d88c-4da7-aeb1-5378d02996d3",
+    "hasFileDataStoreList": false,
+    "hasHashedChunkList": true
+  },
+  "objectSpaces": [
+    {
+      "gosid": "1b6c0d6a-f1b1-4e9d-97f8-47d7deeea379:1",
+      "revisionCount": 6,
+      "revisions": [
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "f4394de6-faf2-4bbf-87af-fe793aad5ed0:1",
+          "ridDependent": "00000000-0000-0000-0000-000000000000:0",
+          "rootObjectCount": 2
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "d26fe0b3-663f-08c6-0b09-fbcd9ccb3f9a:1",
+          "ridDependent": "f4394de6-faf2-4bbf-87af-fe793aad5ed0:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "466c4334-2805-0404-27b4-581bd7a71759:1",
+          "ridDependent": "d26fe0b3-663f-08c6-0b09-fbcd9ccb3f9a:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "2f062972-dae1-0079-1fc8-1018ec75baca:1",
+          "ridDependent": "466c4334-2805-0404-27b4-581bd7a71759:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "53737de4-d76f-017d-25a9-ad45e7d5f651:1",
+          "ridDependent": "2f062972-dae1-0079-1fc8-1018ec75baca:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "ee37140d-1d11-057a-3439-91561f1955dc:1",
+          "ridDependent": "53737de4-d76f-017d-25a9-ad45e7d5f651:1",
+          "rootObjectCount": 0
+        }
+      ]
+    },
+    {
+      "gosid": "4aa0d5d4-680c-4486-9ff5-a763cb71a7c0:1",
+      "revisionCount": 21,
+      "revisions": [
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "1ed11553-fdc3-4a50-9e4d-ff0cd139eb51:1",
+          "ridDependent": "00000000-0000-0000-0000-000000000000:0",
+          "rootObjectCount": 3
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "d713f02f-cbc8-492a-9e71-5be1acfc0828:1",
+          "ridDependent": "00000000-0000-0000-0000-000000000000:0",
+          "rootObjectCount": 2
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "5a39d59f-0fc5-4c60-b6f1-2ca93dce8031:1",
+          "ridDependent": "00000000-0000-0000-0000-000000000000:0",
+          "rootObjectCount": 3
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "6e08ed9f-77ae-0218-0796-baf70749f6a1:1",
+          "ridDependent": "d713f02f-cbc8-492a-9e71-5be1acfc0828:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "38420e09-37c5-0174-27cb-dc5014963b13:1",
+          "ridDependent": "5a39d59f-0fc5-4c60-b6f1-2ca93dce8031:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "8253b452-51d3-0ae3-1f50-7df8400953ad:1",
+          "ridDependent": "38420e09-37c5-0174-27cb-dc5014963b13:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "0ec087b3-d3ff-027a-16c7-d2d751430bc5:1",
+          "ridDependent": "8253b452-51d3-0ae3-1f50-7df8400953ad:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "c249e389-30ac-01ab-24f5-0bff53a1d72f:1",
+          "ridDependent": "0ec087b3-d3ff-027a-16c7-d2d751430bc5:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "f1955529-8f40-0216-331e-94c0864057e4:1",
+          "ridDependent": "c249e389-30ac-01ab-24f5-0bff53a1d72f:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "7c27ed93-d962-059a-131d-4757224a37d1:1",
+          "ridDependent": "f1955529-8f40-0216-331e-94c0864057e4:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "56af1cca-e0d3-0197-086f-f414a39652a9:1",
+          "ridDependent": "6e08ed9f-77ae-0218-0796-baf70749f6a1:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "3120615e-8d60-08bb-30ff-2a2993d46ce5:1",
+          "ridDependent": "7c27ed93-d962-059a-131d-4757224a37d1:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "b53ccf43-2678-03fe-3228-ca6018a55e45:1",
+          "ridDependent": "3120615e-8d60-08bb-30ff-2a2993d46ce5:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "7111497f-1b6b-4209-9491-c98b04cf4c5a:1",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "eee9cd34-0aff-0d15-31bb-f63eb251a790:1",
+          "ridDependent": "56af1cca-e0d3-0197-086f-f414a39652a9:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "6771e182-6ca3-012e-3bdb-236b4a1f46e3:1",
+          "ridDependent": "00000000-0000-0000-0000-000000000000:0",
+          "rootObjectCount": 2
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 4,
+          "rid": "64297cb8-37f5-03ae-3447-5ec0a6ab4e9d:1",
+          "ridDependent": "7c27ed93-d962-059a-131d-4757224a37d1:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "7111497f-1b6b-4209-9491-c98b04cf4c5a:1",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "fc4cf59f-0c14-0acc-2734-04036b788b8c:1",
+          "ridDependent": "eee9cd34-0aff-0d15-31bb-f63eb251a790:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "c9c62837-cf0e-0f02-1074-4a98bbdf63fe:1",
+          "ridDependent": "64297cb8-37f5-03ae-3447-5ec0a6ab4e9d:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "8a2bc9bb-9bf6-0762-37b1-fab1bcdea8f9:1",
+          "ridDependent": "c9c62837-cf0e-0f02-1074-4a98bbdf63fe:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "00000000-0000-0000-0000-000000000000:0",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "064f28f9-143e-0e1f-33d0-e8d3c7090003:1",
+          "ridDependent": "8a2bc9bb-9bf6-0762-37b1-fab1bcdea8f9:1",
+          "rootObjectCount": 0
+        },
+        {
+          "gctxid": "7111497f-1b6b-4209-9491-c98b04cf4c5a:1",
+          "hasEncryptionMarker": false,
+          "inlineChangeCount": 0,
+          "objectGroupCount": 1,
+          "odcsDefault": 0,
+          "revisionRole": 1,
+          "rid": "16ccb294-40bd-0af2-0667-e66a66ea5f3f:1",
+          "ridDependent": "fc4cf59f-0c14-0acc-2734-04036b788b8c:1",
+          "rootObjectCount": 0
+        }
+      ]
+    }
+  ],
+  "root": {
+    "objectSpaceCount": 2,
+    "objectSpaceGosids": [
+      "1b6c0d6a-f1b1-4e9d-97f8-47d7deeea379:1",
+      "4aa0d5d4-680c-4486-9ff5-a763cb71a7c0:1"
+    ],
+    "rootGosid": "1b6c0d6a-f1b1-4e9d-97f8-47d7deeea379:1"
+  },
+  "schemaVersion": 1
+}
