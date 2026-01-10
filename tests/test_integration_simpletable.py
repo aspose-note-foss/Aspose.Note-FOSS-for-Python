@@ -14,6 +14,10 @@ from onestore.crc import crc32_rfc3309  # noqa: E402
 from onestore.errors import OneStoreFormatError  # noqa: E402
 from onestore.header import GUID_FILE_FORMAT, GUID_FILE_TYPE_ONE, Header  # noqa: E402
 from onestore.io import BinaryReader  # noqa: E402
+from onestore.parse_context import ParseContext  # noqa: E402
+from onestore.txn_log import TransactionLogFragment  # noqa: E402
+from onestore.txn_log import parse_transaction_log  # noqa: E402
+from onestore.file_node_list import parse_file_node_list  # noqa: E402
 
 
 def _simpletable_path() -> Path | None:
@@ -55,6 +59,101 @@ class TestIntegrationSimpleTable(unittest.TestCase):
         self.assertLessEqual(
             header.fcr_file_node_list_root.stp + header.fcr_file_node_list_root.cb,
             len(self.data),
+        )
+
+    def test_parse_transaction_log_and_basic_invariants(self) -> None:
+        r = BinaryReader(self.data)
+        header = Header.parse(r)
+
+        last_count_by_list_id = parse_transaction_log(BinaryReader(self.data), header)
+
+        # Basic invariants only: avoid brittle fixture-specific expectations.
+        self.assertIsInstance(last_count_by_list_id, dict)
+        self.assertGreater(len(last_count_by_list_id), 0)
+        for k, v in last_count_by_list_id.items():
+            self.assertIsInstance(k, int)
+            self.assertIsInstance(v, int)
+            self.assertGreater(k, 0)
+            self.assertGreater(v, 0)
+            self.assertNotEqual(k, 1)
+
+    def test_transaction_log_is_deterministic(self) -> None:
+        header = Header.parse(BinaryReader(self.data))
+
+        ctx1 = ParseContext(strict=True)
+        ctx2 = ParseContext(strict=True)
+
+        out1 = parse_transaction_log(BinaryReader(self.data), header, ctx1)
+        out2 = parse_transaction_log(BinaryReader(self.data), header, ctx2)
+
+        self.assertEqual(out1, out2)
+        self.assertEqual(ctx1.file_size, len(self.data))
+        self.assertEqual(ctx2.file_size, len(self.data))
+
+    def test_transaction_log_fragment_chain_has_enough_commits(self) -> None:
+        header = Header.parse(BinaryReader(self.data))
+        file_size = len(self.data)
+
+        # Walk the fragment chain defensively: bounded steps + loop detection.
+        visited_stp: set[int] = set()
+        sentinels = 0
+
+        current = header.fcr_transaction_log
+        for _ in range(2048):
+            # Protect against cyclic references.
+            if current.stp in visited_stp:
+                raise AssertionError("Transaction log fragment chain contains a loop")
+            visited_stp.add(current.stp)
+
+            frag = TransactionLogFragment.parse(
+                BinaryReader(self.data),
+                current,
+                ctx=ParseContext(strict=True, file_size=file_size),
+            )
+            sentinels += sum(1 for e in frag.entries if e.is_sentinel)
+
+            # Stop at end of chain.
+            if frag.next_fragment.is_zero() or frag.next_fragment.is_nil() or frag.next_fragment.cb == 0:
+                break
+            frag.next_fragment.validate_in_file(file_size)
+            current = frag.next_fragment
+        else:
+            raise AssertionError("Transaction log fragment chain is unexpectedly long")
+
+        # The file should contain at least the committed number of transaction sentinels.
+        self.assertGreaterEqual(sentinels, header.c_transactions_in_log)
+
+    def test_parse_root_file_node_list_basic_invariants(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        header = Header.parse(BinaryReader(data))
+        ctx = ParseContext(strict=True, file_size=file_size)
+        last_count_by_list_id = parse_transaction_log(BinaryReader(data), header, ctx)
+
+        root_list = parse_file_node_list(
+            BinaryReader(data),
+            header.fcr_file_node_list_root,
+            last_count_by_list_id=last_count_by_list_id,
+            ctx=ParseContext(strict=True, file_size=file_size),
+        )
+
+        self.assertGreaterEqual(root_list.list_id, 0x10)
+        self.assertGreater(root_list.node_count, 0)
+        self.assertGreaterEqual(len(root_list.fragments), 1)
+
+        # Determinism: structure-only equality.
+        root_list2 = parse_file_node_list(
+            BinaryReader(data),
+            header.fcr_file_node_list_root,
+            last_count_by_list_id=last_count_by_list_id,
+            ctx=ParseContext(strict=True, file_size=file_size),
+        )
+        self.assertEqual(root_list.list_id, root_list2.list_id)
+        self.assertEqual(root_list.node_count, root_list2.node_count)
+        self.assertEqual(
+            [(f.header.list_id, f.header.fragment_sequence, f.fcr.stp, f.fcr.cb) for f in root_list.fragments],
+            [(f.header.list_id, f.header.fragment_sequence, f.fcr.stp, f.fcr.cb) for f in root_list2.fragments],
         )
 
     def test_binary_reader_view_matches_slices(self) -> None:
