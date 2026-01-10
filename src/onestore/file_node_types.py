@@ -44,6 +44,18 @@ class FileDataStoreListReferenceFND:
 
 
 @dataclass(frozen=True, slots=True)
+class FileDataStoreObjectReferenceFND:
+    """FileDataStoreObjectReferenceFND (0x094, BaseType=2).
+
+    Contains a FileNodeChunkReference pointing to a FileDataStoreObject (2.6.13) and
+    a 16-byte guidReference used for lookup.
+    """
+
+    ref: FileNodeChunkReference
+    guid_reference: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class ObjectSpaceManifestListStartFND:
     """ObjectSpaceManifestListStartFND (0x00C) — first node in an object space manifest list."""
 
@@ -305,6 +317,7 @@ KnownFileNodeType = (
     ObjectSpaceManifestRootFND
     | ObjectSpaceManifestListReferenceFND
     | FileDataStoreListReferenceFND
+    | FileDataStoreObjectReferenceFND
     | ObjectSpaceManifestListStartFND
     | RevisionManifestListReferenceFND
     | RevisionManifestListStartFND
@@ -419,6 +432,28 @@ def _parse_file_data_store_list_reference_fnd(node: FileNode, ctx: ParseContext)
         )
 
     return FileDataStoreListReferenceFND(ref=node.chunk_ref)
+
+
+def _parse_file_data_store_object_reference_fnd(node: FileNode, ctx: ParseContext) -> FileDataStoreObjectReferenceFND:
+    # Spec (docs/ms-onestore/11-file-node-types-file-data.md): BaseType=2, FileNodeChunkReference + 16-byte GUID.
+    if node.header.base_type != 2:
+        raise OneStoreFormatError(
+            "FileDataStoreObjectReferenceFND MUST have BaseType==2",
+            offset=node.header.offset,
+        )
+    if node.chunk_ref is None:
+        raise OneStoreFormatError(
+            "FileDataStoreObjectReferenceFND MUST contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 16:
+        raise OneStoreFormatError(
+            "FileDataStoreObjectReferenceFND payload MUST be 16-byte guidReference",
+            offset=node.header.offset,
+        )
+
+    guid_reference = bytes(node.fnd)
+    return FileDataStoreObjectReferenceFND(ref=node.chunk_ref, guid_reference=guid_reference)
 
 
 def _parse_object_space_manifest_list_start_fnd(node: FileNode, ctx: ParseContext) -> ObjectSpaceManifestListStartFND:
@@ -1354,6 +1389,7 @@ FILE_NODE_TYPE_PARSERS: dict[int, FileNodeTypeParser] = {
     0x084: _parse_object_info_dependency_overrides_fnd,
     0x08C: _parse_data_signature_group_definition_fnd,
     0x090: _parse_file_data_store_list_reference_fnd,
+    0x094: _parse_file_data_store_object_reference_fnd,
     0x0A4: _parse_object_declaration2_refcount_fnd,
     0x0A5: _parse_object_declaration2_large_refcount_fnd,
     0x0B0: _parse_object_group_list_reference_fnd,

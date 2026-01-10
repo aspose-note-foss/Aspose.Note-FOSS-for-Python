@@ -1,6 +1,7 @@
 import re
 import sys
 import unittest
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,11 @@ from onestore.object_space import parse_object_spaces_summary  # noqa: E402
 from onestore.object_space import parse_object_spaces_with_revisions  # noqa: E402
 from onestore.object_space import parse_object_spaces_with_resolved_ids  # noqa: E402
 from onestore.object_data import parse_object_space_object_prop_set_from_ref  # noqa: E402
+from onestore.file_data import (  # noqa: E402
+    get_file_data_by_reference,
+    parse_file_data_store_index,
+    parse_file_data_store_object_from_ref,
+)
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
@@ -517,6 +523,44 @@ class TestIntegrationSimpleTable(unittest.TestCase):
                 break
 
         self.assertTrue(found, "No decodable ObjectSpaceObjectPropSet found in fixture")
+
+    def test_step14_file_data_store_index_and_ifndf_resolution(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        idx1 = parse_file_data_store_index(data, ctx=ParseContext(strict=True, file_size=file_size))
+        idx2 = parse_file_data_store_index(data, ctx=ParseContext(strict=True, file_size=file_size))
+        self.assertEqual(idx1, idx2)
+
+        if not idx1:
+            raise unittest.SkipTest("No FileDataStoreListReferenceFND present in fixture")
+
+        # Basic invariants: all refs are in-bounds and GUID keys are well-formed.
+        for guid_le, ref in idx1.items():
+            self.assertIsInstance(guid_le, (bytes, bytearray))
+            self.assertEqual(len(guid_le), 16)
+            self.assertGreater(int(ref.cb), 0)
+            self.assertLessEqual(int(ref.stp) + int(ref.cb), file_size)
+
+        # Pick one entry and ensure we can parse the FileDataStoreObject and resolve it via <ifndf>.
+        guid_le, ref = next(iter(idx1.items()))
+        obj = parse_file_data_store_object_from_ref(
+            data,
+            stp=int(ref.stp),
+            cb=int(ref.cb),
+            ctx=ParseContext(strict=True, file_size=file_size),
+        )
+        self.assertEqual(len(obj.file_data), obj.cb_length)
+
+        guid_text = str(uuid.UUID(bytes_le=guid_le)).lower()
+        reference = f"<ifndf>{{{guid_text}}}</ifndf>"
+        resolved = get_file_data_by_reference(
+            data,
+            reference,
+            ctx=ParseContext(strict=True, file_size=file_size),
+            index=idx1,
+        )
+        self.assertEqual(resolved, obj.file_data)
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)

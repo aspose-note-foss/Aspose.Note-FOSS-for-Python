@@ -39,6 +39,14 @@ from .object_data import (
     decode_property_set,
     parse_object_space_object_prop_set_from_ref,
 )
+from .file_data import (
+    FileDataStoreObject,
+    ParsedFileDataReference,
+    get_file_data_by_reference,
+    parse_file_data_reference,
+    parse_file_data_store_index,
+    parse_file_data_store_object_from_ref,
+)
 from .txn_log import parse_transaction_log
 
 __all__ = [
@@ -78,4 +86,10 @@ __all__ = [
     "PrtFourBytesOfLengthFollowedByData",
     "decode_property_set",
     "parse_object_space_object_prop_set_from_ref",
+    "FileDataStoreObject",
+    "ParsedFileDataReference",
+    "get_file_data_by_reference",
+    "parse_file_data_reference",
+    "parse_file_data_store_index",
+    "parse_file_data_store_object_from_ref",
 ]
