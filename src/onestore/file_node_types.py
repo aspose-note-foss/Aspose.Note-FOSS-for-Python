@@ -43,7 +43,42 @@ class FileDataStoreListReferenceFND:
     ref: FileNodeChunkReference
 
 
-KnownFileNodeType = ObjectSpaceManifestRootFND | ObjectSpaceManifestListReferenceFND | FileDataStoreListReferenceFND
+@dataclass(frozen=True, slots=True)
+class ObjectSpaceManifestListStartFND:
+    """ObjectSpaceManifestListStartFND (0x00C) — first node in an object space manifest list."""
+
+    gosid: ExtendedGUID
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionManifestListReferenceFND:
+    """RevisionManifestListReferenceFND (0x010, BaseType=2).
+
+    Contains only a FileNodeChunkReference pointing to the revision manifest list.
+    """
+
+    ref: FileNodeChunkReference
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionManifestListStartFND:
+    """RevisionManifestListStartFND (0x014) — first node in a revision manifest list.
+
+    nInstance MUST be ignored.
+    """
+
+    gosid: ExtendedGUID
+    n_instance: int
+
+
+KnownFileNodeType = (
+    ObjectSpaceManifestRootFND
+    | ObjectSpaceManifestListReferenceFND
+    | FileDataStoreListReferenceFND
+    | ObjectSpaceManifestListStartFND
+    | RevisionManifestListReferenceFND
+    | RevisionManifestListStartFND
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,9 +165,87 @@ def _parse_file_data_store_list_reference_fnd(node: FileNode, ctx: ParseContext)
     return FileDataStoreListReferenceFND(ref=node.chunk_ref)
 
 
+def _parse_object_space_manifest_list_start_fnd(node: FileNode, ctx: ParseContext) -> ObjectSpaceManifestListStartFND:
+    # Spec (docs/ms-onestore/08-file-node-types-manifests.md): payload is ExtendedGUID (20 bytes).
+    if node.header.base_type != 0:
+        raise OneStoreFormatError(
+            "ObjectSpaceManifestListStartFND MUST have BaseType==0",
+            offset=node.header.offset,
+        )
+    if node.chunk_ref is not None:
+        raise OneStoreFormatError(
+            "ObjectSpaceManifestListStartFND MUST not contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 20:
+        raise OneStoreFormatError(
+            "ObjectSpaceManifestListStartFND payload MUST be 20 bytes",
+            offset=node.header.offset,
+        )
+
+    gosid = ExtendedGUID.parse(BinaryReader(node.fnd))
+    return ObjectSpaceManifestListStartFND(gosid=gosid)
+
+
+def _parse_revision_manifest_list_reference_fnd(
+    node: FileNode, ctx: ParseContext
+) -> RevisionManifestListReferenceFND:
+    # Spec: BaseType=2, only FileNodeChunkReference.
+    if node.header.base_type != 2:
+        raise OneStoreFormatError(
+            "RevisionManifestListReferenceFND MUST have BaseType==2",
+            offset=node.header.offset,
+        )
+    if node.chunk_ref is None:
+        raise OneStoreFormatError(
+            "RevisionManifestListReferenceFND MUST contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 0:
+        raise OneStoreFormatError(
+            "RevisionManifestListReferenceFND MUST contain no data beyond FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+
+    return RevisionManifestListReferenceFND(ref=node.chunk_ref)
+
+
+def _parse_revision_manifest_list_start_fnd(node: FileNode, ctx: ParseContext) -> RevisionManifestListStartFND:
+    # Spec: gosid (20 bytes) + nInstance (u32). nInstance MUST be ignored.
+    if node.header.base_type != 0:
+        raise OneStoreFormatError(
+            "RevisionManifestListStartFND MUST have BaseType==0",
+            offset=node.header.offset,
+        )
+    if node.chunk_ref is not None:
+        raise OneStoreFormatError(
+            "RevisionManifestListStartFND MUST not contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 24:
+        raise OneStoreFormatError(
+            "RevisionManifestListStartFND payload MUST be 24 bytes",
+            offset=node.header.offset,
+        )
+
+    r = BinaryReader(node.fnd)
+    gosid = ExtendedGUID.parse(r)
+    n_instance = r.read_u32()
+    if r.remaining() != 0:
+        raise OneStoreFormatError(
+            "RevisionManifestListStartFND parse did not consume full payload",
+            offset=node.header.offset,
+        )
+
+    return RevisionManifestListStartFND(gosid=gosid, n_instance=int(n_instance))
+
+
 FILE_NODE_TYPE_PARSERS: dict[int, FileNodeTypeParser] = {
     0x004: _parse_object_space_manifest_root_fnd,
     0x008: _parse_object_space_manifest_list_reference_fnd,
+    0x00C: _parse_object_space_manifest_list_start_fnd,
+    0x010: _parse_revision_manifest_list_reference_fnd,
+    0x014: _parse_revision_manifest_list_start_fnd,
     0x090: _parse_file_data_store_list_reference_fnd,
 }
 

@@ -8,12 +8,13 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from onestore.chunk_refs import FileChunkReference32, parse_filenode_chunk_reference  # noqa: E402
+from onestore.chunk_refs import FileChunkReference32, FileChunkReference64x32, parse_filenode_chunk_reference  # noqa: E402
 from onestore.common_types import ExtendedGUID, StringInStorageBuffer  # noqa: E402
 from onestore.crc import crc32_rfc3309  # noqa: E402
 from onestore.errors import OneStoreFormatError  # noqa: E402
 from onestore.header import GUID_FILE_FORMAT, GUID_FILE_TYPE_ONE, Header  # noqa: E402
 from onestore.io import BinaryReader  # noqa: E402
+from onestore.object_space import parse_object_spaces_summary  # noqa: E402
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
@@ -24,7 +25,10 @@ from onestore.file_node_list import (  # noqa: E402
 )
 from onestore.file_node_types import (  # noqa: E402
     ObjectSpaceManifestListReferenceFND,
+    ObjectSpaceManifestListStartFND,
     ObjectSpaceManifestRootFND,
+    RevisionManifestListReferenceFND,
+    RevisionManifestListStartFND,
     build_root_file_node_list_manifests,
 )
 
@@ -261,6 +265,59 @@ class TestIntegrationSimpleTable(unittest.TestCase):
             [(tn.node.header.file_node_id, type(tn.typed).__name__ if tn.typed else None) for tn in out.nodes],
             [(tn.node.header.file_node_id, type(tn.typed).__name__ if tn.typed else None) for tn in out2.nodes],
         )
+
+    def test_object_spaces_manifest_and_revision_list_links_end_to_end(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        # End-to-end Step 9 parse should be deterministic.
+        summary1 = parse_object_spaces_summary(data, ctx=ParseContext(strict=True, file_size=file_size))
+        summary2 = parse_object_spaces_summary(data, ctx=ParseContext(strict=True, file_size=file_size))
+        self.assertEqual(summary1, summary2)
+
+        self.assertGreaterEqual(len(summary1.object_spaces), 1)
+
+        # For per-object-space checks we re-parse lists and compare against the summary.
+        header = Header.parse(BinaryReader(data))
+        last_count_by_list_id = parse_transaction_log(
+            BinaryReader(data),
+            header,
+            ParseContext(strict=True, file_size=file_size),
+        )
+
+        for os in summary1.object_spaces:
+            # Parse object space manifest list.
+            manifest_list = parse_file_node_list_typed_nodes(
+                BinaryReader(data),
+                FileChunkReference64x32(stp=os.manifest_list_ref.stp, cb=os.manifest_list_ref.cb),
+                last_count_by_list_id=last_count_by_list_id,
+                ctx=ParseContext(strict=True, file_size=file_size),
+            )
+            self.assertGreaterEqual(len(manifest_list.nodes), 1)
+            self.assertIsInstance(manifest_list.nodes[0].typed, ObjectSpaceManifestListStartFND)
+            assert isinstance(manifest_list.nodes[0].typed, ObjectSpaceManifestListStartFND)
+            self.assertEqual(manifest_list.nodes[0].typed.gosid, os.gosid)
+
+            # MUST: use the last RevisionManifestListReferenceFND in the list.
+            rev_refs = [
+                tn.typed.ref
+                for tn in manifest_list.nodes
+                if isinstance(tn.typed, RevisionManifestListReferenceFND)
+            ]
+            self.assertGreaterEqual(len(rev_refs), 1)
+            self.assertEqual(rev_refs[-1], os.revision_manifest_list_ref)
+
+            # Parse revision manifest list and check the start node gosid.
+            rev_list = parse_file_node_list_typed_nodes(
+                BinaryReader(data),
+                FileChunkReference64x32(stp=os.revision_manifest_list_ref.stp, cb=os.revision_manifest_list_ref.cb),
+                last_count_by_list_id=last_count_by_list_id,
+                ctx=ParseContext(strict=True, file_size=file_size),
+            )
+            self.assertGreaterEqual(len(rev_list.nodes), 1)
+            self.assertIsInstance(rev_list.nodes[0].typed, RevisionManifestListStartFND)
+            assert isinstance(rev_list.nodes[0].typed, RevisionManifestListStartFND)
+            self.assertEqual(rev_list.nodes[0].typed.gosid, os.gosid)
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)
