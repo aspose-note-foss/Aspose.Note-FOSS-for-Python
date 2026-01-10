@@ -16,6 +16,7 @@ from onestore.header import GUID_FILE_FORMAT, GUID_FILE_TYPE_ONE, Header  # noqa
 from onestore.io import BinaryReader  # noqa: E402
 from onestore.object_space import parse_object_spaces_summary  # noqa: E402
 from onestore.object_space import parse_object_spaces_with_revisions  # noqa: E402
+from onestore.object_space import parse_object_spaces_with_resolved_ids  # noqa: E402
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
@@ -401,6 +402,56 @@ class TestIntegrationSimpleTable(unittest.TestCase):
             any_marker = any(r.has_encryption_marker for r in os.revisions)
             if any_marker:
                 self.assertTrue(all(r.has_encryption_marker for r in os.revisions))
+
+    def test_step11_resolved_ids_is_deterministic_and_structurally_valid(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        out1 = parse_object_spaces_with_resolved_ids(data, ctx=ParseContext(strict=True, file_size=file_size))
+        out2 = parse_object_spaces_with_resolved_ids(data, ctx=ParseContext(strict=True, file_size=file_size))
+        self.assertEqual(out1, out2)
+
+        self.assertGreaterEqual(len(out1.object_spaces), 1)
+
+        for os in out1.object_spaces:
+            # Revisions are deterministic and ordered as parsed.
+            self.assertIsInstance(os.revisions, tuple)
+
+            seen_rids: set[tuple[bytes, int]] = set()
+            for rev in os.revisions:
+                self.assertFalse(rev.rid.is_zero())
+                rid_key = (rev.rid.guid, int(rev.rid.n))
+                self.assertNotIn(rid_key, seen_rids)
+                seen_rids.add(rid_key)
+
+                # Dependency references must point to earlier revisions.
+                if not rev.rid_dependent.is_zero():
+                    dep_key = (rev.rid_dependent.guid, int(rev.rid_dependent.n))
+                    self.assertIn(dep_key, seen_rids)
+
+                # Effective table is stored deterministically (sorted by index).
+                self.assertIsInstance(rev.effective_gid_table, tuple)
+                last_idx = -1
+                for idx, guid in rev.effective_gid_table:
+                    self.assertIsInstance(idx, int)
+                    self.assertGreaterEqual(idx, 0)
+                    self.assertLess(idx, 0xFFFFFF)
+                    self.assertGreater(idx, last_idx)
+                    last_idx = idx
+                    self.assertIsInstance(guid, (bytes, bytearray))
+                    self.assertEqual(len(guid), 16)
+
+                # Root objects are always resolvable to ExtendedGUID in strict mode.
+                self.assertIsInstance(rev.resolved_root_objects, tuple)
+                for role, oid in rev.resolved_root_objects:
+                    self.assertIsInstance(role, int)
+                    self.assertIsInstance(oid, ExtendedGUID)
+
+                # If any CompactIDs were encountered in object changes, they were resolved to non-zero GUIDs.
+                self.assertIsInstance(rev.resolved_change_oids, tuple)
+                for oid in rev.resolved_change_oids:
+                    self.assertIsInstance(oid, ExtendedGUID)
+                    self.assertNotEqual(oid.guid, b"\x00" * 16)
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)

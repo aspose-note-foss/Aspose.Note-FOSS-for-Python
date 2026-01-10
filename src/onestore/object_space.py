@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from .common_types import CompactID, ExtendedGUID
 from .chunk_refs import FileChunkReference64x32, FileNodeChunkReference
@@ -106,6 +107,33 @@ class ObjectGroupSummary:
 class GlobalIdTableSequenceSummary:
     start: GlobalIdTableStartFNDX | GlobalIdTableStart2FND
     ops: tuple[GlobalIdTableEntryFNDX | GlobalIdTableEntry2FNDX | GlobalIdTableEntry3FNDX, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionResolvedIdsSummary:
+    """Step 11 output: resolved IDs without changing existing Step 10 models."""
+
+    rid: ExtendedGUID
+    rid_dependent: ExtendedGUID
+    # Final effective table at the end of the revision manifest.
+    # Stored as a deterministic sorted tuple (index -> guid bytes).
+    effective_gid_table: tuple[tuple[int, bytes], ...]
+    # Root objects resolved to ExtendedGUID (root_role -> oid).
+    resolved_root_objects: tuple[tuple[int, ExtendedGUID], ...]
+    # All object IDs encountered in changes (group lists + inline) resolved to ExtendedGUID.
+    resolved_change_oids: tuple[ExtendedGUID, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectSpaceResolvedIdsSummary:
+    gosid: ExtendedGUID
+    revisions: tuple[RevisionResolvedIdsSummary, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OneStoreObjectSpacesWithResolvedIds:
+    root_gosid: ExtendedGUID
+    object_spaces: tuple[ObjectSpaceResolvedIdsSummary, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -599,6 +627,67 @@ def _parse_object_group_list(
     )
 
 
+def _resolve_oids_in_object_group_list(
+    data: bytes | bytearray | memoryview,
+    ref: FileNodeChunkReference,
+    *,
+    initial_table: dict[int, bytes] | None,
+    last_count_by_list_id: dict[int, int],
+    ctx: ParseContext,
+) -> tuple[ExtendedGUID, ...]:
+    """Resolve CompactIDs inside an object group list, honoring in-list GID table scope.
+
+    Object group lists are separate file node lists; real-world files can include
+    GlobalIdTableStart* sequences inside these lists.
+    """
+
+    if _is_nil_ref(ref):
+        raise OneStoreFormatError("ObjectGroupListReferenceFND ref MUST NOT be fcrNil", offset=0)
+
+    group_list_fcr = _as_fcr64x32(ref)
+    group_list = parse_file_node_list_typed_nodes(
+        BinaryReader(data),
+        group_list_fcr,
+        last_count_by_list_id=last_count_by_list_id,
+        ctx=ctx,
+    )
+
+    if not group_list.nodes:
+        return ()
+
+    current_table: dict[int, bytes] | None = initial_table
+    resolved: list[ExtendedGUID] = []
+
+    i = 0
+    while i < len(group_list.nodes):
+        t = group_list.nodes[i].typed
+        if t is None:
+            i += 1
+            continue
+
+        if isinstance(t, (GlobalIdTableStartFNDX, GlobalIdTableStart2FND)):
+            seq, new_i = _parse_global_id_table_sequence(list(group_list.nodes), i, ctx=ctx)
+            current_table = _build_gid_table_from_sequence(
+                seq,
+                dependency=initial_table,
+                ctx=ctx,
+                offset=group_list.nodes[i].node.header.offset,
+            )
+            i = new_i
+            continue
+
+        if isinstance(t, ObjectGroupEndFND):
+            break
+
+        # Resolve CompactIDs in known object change node types.
+        for oid in _iter_compact_ids_from_change(t):
+            resolved.append(_resolve_compact_id_to_extended_guid(oid, current_table, ctx=ctx, offset=None))
+
+        i += 1
+
+    return tuple(resolved)
+
+
 def _parse_global_id_table_sequence(
     manifest_nodes: list[TypedFileNode],
     start_index: int,
@@ -609,8 +698,44 @@ def _parse_global_id_table_sequence(
     assert isinstance(start_t, (GlobalIdTableStartFNDX, GlobalIdTableStart2FND))
 
     ops: list[GlobalIdTableEntryFNDX | GlobalIdTableEntry2FNDX | GlobalIdTableEntry3FNDX] = []
-    seen_index: set[int] = set()
-    seen_guid: set[bytes] = set()
+
+    # MUST: destination indices must be unique within a sequence.
+    # Avoid O(cEntriesToCopy) validation by tracking destination intervals.
+    dest_points: set[int] = set()
+    dest_ranges: list[tuple[int, int]] = []  # inclusive
+
+    def _dest_has_overlap(start: int, end: int) -> bool:
+        if start > end:
+            return False
+        for p in dest_points:
+            if start <= p <= end:
+                return True
+        for a, b in dest_ranges:
+            if not (end < a or b < start):
+                return True
+        return False
+
+    def _dest_add_point(p: int) -> None:
+        if _dest_has_overlap(p, p):
+            raise OneStoreFormatError(
+                "Global ID table destination index MUST be unique within a sequence",
+                offset=manifest_nodes[i].node.header.offset,
+            )
+        dest_points.add(p)
+
+    def _dest_add_range(start: int, end: int) -> None:
+        if start > end:
+            return
+        if _dest_has_overlap(start, end):
+            raise OneStoreFormatError(
+                "Global ID table destination index range MUST NOT overlap within a sequence",
+                offset=manifest_nodes[i].node.header.offset,
+            )
+        dest_ranges.append((start, end))
+
+    # MUST: direct GUID values must be unique within a sequence.
+    # For 0x025/0x026, GUID uniqueness depends on the dependency revision and is validated later.
+    seen_direct_guid: set[bytes] = set()
 
     i = start_index + 1
     while i < len(manifest_nodes):
@@ -623,22 +748,51 @@ def _parse_global_id_table_sequence(
                 offset=manifest_nodes[i].node.header.offset,
             )
         if isinstance(t, GlobalIdTableEntryFNDX):
-            if t.index in seen_index:
-                raise OneStoreFormatError(
-                    "GlobalIdTableEntryFNDX.index MUST be unique within a sequence",
-                    offset=manifest_nodes[i].node.header.offset,
-                )
-            if t.guid in seen_guid:
+            _dest_add_point(int(t.index))
+            if t.guid in seen_direct_guid:
                 raise OneStoreFormatError(
                     "GlobalIdTableEntryFNDX.guid MUST be unique within a sequence",
                     offset=manifest_nodes[i].node.header.offset,
                 )
-            seen_index.add(t.index)
-            seen_guid.add(t.guid)
+            seen_direct_guid.add(t.guid)
             ops.append(t)
             i += 1
             continue
-        if isinstance(t, (GlobalIdTableEntry2FNDX, GlobalIdTableEntry3FNDX)):
+        if isinstance(t, GlobalIdTableEntry2FNDX):
+            for v in (int(t.index_map_from), int(t.index_map_to)):
+                if v >= 0xFFFFFF:
+                    msg = "GlobalIdTableEntry2FNDX indices MUST be < 0xFFFFFF"
+                    if ctx.strict:
+                        raise OneStoreFormatError(msg, offset=manifest_nodes[i].node.header.offset)
+                    ctx.warn(msg, offset=manifest_nodes[i].node.header.offset)
+                    break
+            _dest_add_point(int(t.index_map_to))
+            ops.append(t)
+            i += 1
+            continue
+
+        if isinstance(t, GlobalIdTableEntry3FNDX):
+            for v in (int(t.index_copy_from_start), int(t.index_copy_to_start)):
+                if v >= 0xFFFFFF:
+                    msg = "GlobalIdTableEntry3FNDX indices MUST be < 0xFFFFFF"
+                    if ctx.strict:
+                        raise OneStoreFormatError(msg, offset=manifest_nodes[i].node.header.offset)
+                    ctx.warn(msg, offset=manifest_nodes[i].node.header.offset)
+                    break
+            c = int(t.entries_to_copy)
+            if c < 0:
+                raise OneStoreFormatError(
+                    "GlobalIdTableEntry3FNDX.cEntriesToCopy MUST be non-negative",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            if c > 0:
+                end = int(t.index_copy_to_start) + c - 1
+                if end >= 0xFFFFFF:
+                    msg = "GlobalIdTableEntry3FNDX destination range MUST be < 0xFFFFFF"
+                    if ctx.strict:
+                        raise OneStoreFormatError(msg, offset=manifest_nodes[i].node.header.offset)
+                    ctx.warn(msg, offset=manifest_nodes[i].node.header.offset)
+                _dest_add_range(int(t.index_copy_to_start), end)
             ops.append(t)
             i += 1
             continue
@@ -813,6 +967,280 @@ def _parse_revision_manifest_content(
         root_objects=tuple(root_objects),
         override_nodes=int(override_nodes),
         inline_changes=tuple(inline_changes),
+    )
+
+
+def _sorted_gid_table_items(table: dict[int, bytes]) -> tuple[tuple[int, bytes], ...]:
+    return tuple(sorted(((int(k), bytes(v)) for k, v in table.items()), key=lambda kv: kv[0]))
+
+
+def _resolve_compact_id_to_extended_guid(
+    oid: CompactID,
+    table: dict[int, bytes] | None,
+    *,
+    ctx: ParseContext,
+    offset: int | None,
+) -> ExtendedGUID:
+    if table is None:
+        msg = "CompactID resolution requires an in-scope Global ID Table"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=offset)
+        ctx.warn(msg, offset=offset)
+        return ExtendedGUID(guid=b"\x00" * 16, n=int(oid.n))
+
+    guid = table.get(int(oid.guid_index))
+    if guid is None:
+        msg = f"CompactID.guidIndex {int(oid.guid_index)} is not present in the effective Global ID Table"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=offset)
+        ctx.warn(msg, offset=offset)
+        return ExtendedGUID(guid=b"\x00" * 16, n=int(oid.n))
+
+    return ExtendedGUID(guid=guid, n=int(oid.n))
+
+
+def _build_gid_table_from_sequence(
+    seq: GlobalIdTableSequenceSummary,
+    *,
+    dependency: dict[int, bytes] | None,
+    ctx: ParseContext,
+    offset: int | None,
+) -> dict[int, bytes]:
+    """Build a new table from a single global id table sequence.
+
+    The table is defined by the sequence entries. Operations 0x025/0x026 pull
+    entries from the dependency table.
+    """
+
+    table: dict[int, bytes] = {}
+    guid_to_index: dict[bytes, int] = {}
+
+    def _add(index: int, guid: bytes) -> None:
+        if index >= 0xFFFFFF:
+            msg = "Global ID Table index MUST be < 0xFFFFFF"
+            if ctx.strict:
+                raise OneStoreFormatError(msg, offset=offset)
+            ctx.warn(msg, offset=offset)
+            return
+        if index in table:
+            raise OneStoreFormatError("Global ID Table indices MUST be unique", offset=offset)
+        if guid in guid_to_index:
+            raise OneStoreFormatError("Global ID Table GUIDs MUST be unique", offset=offset)
+        table[index] = guid
+        guid_to_index[guid] = index
+
+    dep = dependency
+
+    for op in seq.ops:
+        if isinstance(op, GlobalIdTableEntryFNDX):
+            _add(int(op.index), bytes(op.guid))
+            continue
+
+        if isinstance(op, GlobalIdTableEntry2FNDX):
+            if dep is None:
+                msg = "GlobalIdTableEntry2FNDX requires a dependency revision Global ID Table"
+                if ctx.strict:
+                    raise OneStoreFormatError(msg, offset=offset)
+                ctx.warn(msg, offset=offset)
+                continue
+
+            frm = int(op.index_map_from)
+            to = int(op.index_map_to)
+            if frm >= 0xFFFFFF or to >= 0xFFFFFF:
+                msg = "GlobalIdTableEntry2FNDX indices MUST be < 0xFFFFFF"
+                if ctx.strict:
+                    raise OneStoreFormatError(msg, offset=offset)
+                ctx.warn(msg, offset=offset)
+                continue
+
+            g = dep.get(frm)
+            if g is None:
+                raise OneStoreFormatError(
+                    "GlobalIdTableEntry2FNDX.iIndexMapFrom MUST exist in the dependency table",
+                    offset=offset,
+                )
+            _add(to, g)
+            continue
+
+        if isinstance(op, GlobalIdTableEntry3FNDX):
+            if dep is None:
+                msg = "GlobalIdTableEntry3FNDX requires a dependency revision Global ID Table"
+                if ctx.strict:
+                    raise OneStoreFormatError(msg, offset=offset)
+                ctx.warn(msg, offset=offset)
+                continue
+
+            frm0 = int(op.index_copy_from_start)
+            to0 = int(op.index_copy_to_start)
+            count = int(op.entries_to_copy)
+            if frm0 >= 0xFFFFFF or to0 >= 0xFFFFFF:
+                msg = "GlobalIdTableEntry3FNDX indices MUST be < 0xFFFFFF"
+                if ctx.strict:
+                    raise OneStoreFormatError(msg, offset=offset)
+                ctx.warn(msg, offset=offset)
+                continue
+            if count < 0:
+                raise OneStoreFormatError("GlobalIdTableEntry3FNDX.cEntriesToCopy MUST be non-negative", offset=offset)
+            if count == 0:
+                continue
+            if to0 + count - 1 >= 0xFFFFFF:
+                msg = "GlobalIdTableEntry3FNDX destination indices MUST be < 0xFFFFFF"
+                if ctx.strict:
+                    raise OneStoreFormatError(msg, offset=offset)
+                ctx.warn(msg, offset=offset)
+                continue
+
+            for k in range(count):
+                frm = frm0 + k
+                to = to0 + k
+                g = dep.get(frm)
+                if g is None:
+                    raise OneStoreFormatError(
+                        "GlobalIdTableEntry3FNDX source range MUST exist in the dependency table",
+                        offset=offset,
+                    )
+                _add(to, g)
+            continue
+
+    return table
+
+
+def _iter_compact_ids_from_change(change: object) -> Iterable[CompactID]:
+    # CompactIDs appear in ObjectDeclaration2* and ObjectRevisionWithRefCount*.
+    if isinstance(change, ObjectDeclaration2RefCountFND):
+        yield change.oid
+    elif isinstance(change, ObjectDeclaration2LargeRefCountFND):
+        yield change.oid
+    elif isinstance(change, ReadOnlyObjectDeclaration2RefCountFND):
+        yield change.base.oid
+    elif isinstance(change, ReadOnlyObjectDeclaration2LargeRefCountFND):
+        yield change.base.oid
+    elif isinstance(change, ObjectRevisionWithRefCountFNDX):
+        yield change.oid
+    elif isinstance(change, ObjectRevisionWithRefCount2FNDX):
+        yield change.oid
+
+
+def parse_object_spaces_with_resolved_ids(
+    data: bytes | bytearray | memoryview,
+    *,
+    ctx: ParseContext | None = None,
+) -> OneStoreObjectSpacesWithResolvedIds:
+    """Step 11 helper: builds effective Global ID Tables and resolves CompactIDs.
+
+    This does not modify the Step 10 output dataclasses.
+    """
+
+    if ctx is None:
+        ctx = ParseContext(strict=True)
+
+    # We need last_count_by_list_id for re-parsing referenced object group lists.
+    header = Header.parse(BinaryReader(data), ctx=ctx)
+    last_count_by_list_id = parse_transaction_log(BinaryReader(data), header, ctx=ctx)
+
+    step10 = parse_object_spaces_with_revisions(data, ctx=ctx)
+
+    out_object_spaces: list[ObjectSpaceResolvedIdsSummary] = []
+
+    for os in step10.object_spaces:
+        # rid -> effective table at end of the manifest
+        tables_by_rid: dict[ExtendedGUID, dict[int, bytes]] = {}
+        resolved_revs: list[RevisionResolvedIdsSummary] = []
+
+        for rev in os.revisions:
+            dep_table: dict[int, bytes] | None = None
+            if not rev.rid_dependent.is_zero():
+                dep_table = tables_by_rid.get(rev.rid_dependent)
+                if dep_table is None:
+                    # Defensive: Step 10 already enforces ridDependent ordering.
+                    raise OneStoreFormatError(
+                        "ridDependent MUST refer to a previously built revision table",
+                        offset=None,
+                    )
+
+            # Base table (fallback) comes from the dependency revision.
+            table_before = dep_table
+
+            table_after = table_before
+            if rev.manifest is not None and rev.manifest.global_id_table is not None:
+                table_after = _build_gid_table_from_sequence(
+                    rev.manifest.global_id_table,
+                    dependency=dep_table,
+                    ctx=ctx,
+                    offset=None,
+                )
+
+            # End-of-manifest effective table: if a sequence exists, it becomes active; otherwise keep dependency.
+            effective = table_after
+            tables_by_rid[rev.rid] = {} if effective is None else dict(effective)
+
+            resolved_root_objects: list[tuple[int, ExtendedGUID]] = []
+            resolved_change_oids: list[ExtendedGUID] = []
+
+            if rev.manifest is not None:
+                # Resolve CompactIDs using the revision's effective table when available.
+                table_for_revision = table_after if table_after is not None else table_before
+
+                # Root refs.
+                for ro in rev.manifest.root_objects:
+                    if isinstance(ro, RootObjectReference3FND):
+                        resolved_root_objects.append((int(ro.root_role), ro.oid_root))
+                    elif isinstance(ro, RootObjectReference2FNDX):
+                        eg = _resolve_compact_id_to_extended_guid(
+                            ro.oid_root,
+                            table_for_revision,
+                            ctx=ctx,
+                            offset=None,
+                        )
+                        resolved_root_objects.append((int(ro.root_role), eg))
+
+                # Object group changes (from referenced lists).
+                for grp in rev.manifest.object_groups:
+                    resolved_change_oids.extend(
+                        _resolve_oids_in_object_group_list(
+                            data,
+                            grp.ref,
+                            initial_table=table_for_revision,
+                            last_count_by_list_id=last_count_by_list_id,
+                            ctx=ctx,
+                        )
+                    )
+
+                # Inline changes.
+                for ch in rev.manifest.inline_changes:
+                    for oid in _iter_compact_ids_from_change(ch.change):
+                        resolved_change_oids.append(
+                            _resolve_compact_id_to_extended_guid(oid, table_for_revision, ctx=ctx, offset=None)
+                        )
+
+            # Determinism: sort root objects by (role, oid).
+            resolved_root_objects_sorted = tuple(
+                sorted(
+                    resolved_root_objects,
+                    key=lambda p: (int(p[0]), _eg_sort_key(p[1])),
+                )
+            )
+
+            resolved_revs.append(
+                RevisionResolvedIdsSummary(
+                    rid=rev.rid,
+                    rid_dependent=rev.rid_dependent,
+                    effective_gid_table=_sorted_gid_table_items(tables_by_rid[rev.rid]),
+                    resolved_root_objects=resolved_root_objects_sorted,
+                    resolved_change_oids=tuple(resolved_change_oids),
+                )
+            )
+
+        out_object_spaces.append(
+            ObjectSpaceResolvedIdsSummary(
+                gosid=os.gosid,
+                revisions=tuple(resolved_revs),
+            )
+        )
+
+    return OneStoreObjectSpacesWithResolvedIds(
+        root_gosid=step10.root_gosid,
+        object_spaces=tuple(out_object_spaces),
     )
 
 
