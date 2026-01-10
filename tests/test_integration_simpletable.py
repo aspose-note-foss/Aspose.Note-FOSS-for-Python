@@ -17,7 +17,7 @@ from onestore.io import BinaryReader  # noqa: E402
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
-from onestore.file_node_list import parse_file_node_list  # noqa: E402
+from onestore.file_node_list import parse_file_node_list, parse_file_node_list_nodes  # noqa: E402
 
 
 def _simpletable_path() -> Path | None:
@@ -154,6 +154,54 @@ class TestIntegrationSimpleTable(unittest.TestCase):
         self.assertEqual(
             [(f.header.list_id, f.header.fragment_sequence, f.fcr.stp, f.fcr.cb) for f in root_list.fragments],
             [(f.header.list_id, f.header.fragment_sequence, f.fcr.stp, f.fcr.cb) for f in root_list2.fragments],
+        )
+
+    def test_parse_root_file_node_list_nodes_basic_invariants(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        header = Header.parse(BinaryReader(data))
+        last_count_by_list_id = parse_transaction_log(
+            BinaryReader(data),
+            header,
+            ParseContext(strict=True, file_size=file_size),
+        )
+
+        # Parse as typed nodes.
+        ctx = ParseContext(strict=True, file_size=file_size)
+        out = parse_file_node_list_nodes(
+            BinaryReader(data),
+            header.fcr_file_node_list_root,
+            last_count_by_list_id=last_count_by_list_id,
+            ctx=ctx,
+        )
+
+        self.assertGreaterEqual(out.list.list_id, 0x10)
+        self.assertGreater(out.list.node_count, 0)
+        self.assertEqual(len(out.nodes), out.list.node_count)
+
+        # Basic invariants: sizes and bounds.
+        for n in out.nodes:
+            self.assertGreaterEqual(n.header.size, 4)
+            self.assertLessEqual(n.header.offset + n.header.size, file_size)
+            if n.header.base_type in (1, 2):
+                self.assertIsNotNone(n.chunk_ref)
+            elif n.header.base_type == 0:
+                self.assertIsNone(n.chunk_ref)
+
+        # Determinism: parsing twice yields same structure and same headers sequence.
+        out2 = parse_file_node_list_nodes(
+            BinaryReader(data),
+            header.fcr_file_node_list_root,
+            last_count_by_list_id=last_count_by_list_id,
+            ctx=ParseContext(strict=True, file_size=file_size),
+        )
+
+        self.assertEqual(out.list.list_id, out2.list.list_id)
+        self.assertEqual(out.list.node_count, out2.list.node_count)
+        self.assertEqual(
+            [(n.header.file_node_id, n.header.size, n.header.base_type) for n in out.nodes],
+            [(n.header.file_node_id, n.header.size, n.header.base_type) for n in out2.nodes],
         )
 
     def test_binary_reader_view_matches_slices(self) -> None:

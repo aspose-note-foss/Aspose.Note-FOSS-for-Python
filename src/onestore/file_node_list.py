@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from .chunk_refs import FileChunkReference64x32
 from .errors import OneStoreFormatError
+from .file_node_core import FileNode, parse_file_node
 from .io import BinaryReader
 from .parse_context import ParseContext
 
@@ -49,6 +50,16 @@ def _parse_file_node_header(reader: BinaryReader, *, ctx: ParseContext) -> FileN
 
 
 @dataclass(frozen=True, slots=True)
+class FileNodeRaw:
+    header: FileNodeHeader
+    raw_bytes: bytes
+
+    @property
+    def payload(self) -> bytes:
+        return self.raw_bytes[4:]
+
+
+@dataclass(frozen=True, slots=True)
 class FileNodeListHeader:
     magic: int
     list_id: int
@@ -74,6 +85,7 @@ class FileNodeListFragment:
     fcr: FileChunkReference64x32
     header: FileNodeListHeader
     file_nodes: tuple[FileNodeHeader, ...]
+    raw_nodes: tuple[FileNodeRaw, ...]
     node_count: int
     found_chunk_terminator: bool
     next_fragment: FileChunkReference64x32
@@ -85,6 +97,7 @@ class FileNodeListFragment:
         fcr: FileChunkReference64x32,
         *,
         remaining_nodes: int | None,
+        capture_node_bytes: bool = False,
         ctx: ParseContext | None = None,
     ) -> "FileNodeListFragment":
         if ctx is None:
@@ -117,6 +130,7 @@ class FileNodeListFragment:
             raise OneStoreFormatError("FileNodeListFragment nextFragment position invalid", offset=fcr.stp)
 
         file_nodes: list[FileNodeHeader] = []
+        raw_nodes: list[FileNodeRaw] = []
         node_count = 0
         found_terminator = False
 
@@ -156,12 +170,22 @@ class FileNodeListFragment:
                 if node.size != 4:
                     raise OneStoreFormatError("ChunkTerminatorFND MUST contain no data", offset=node.offset)
                 found_terminator = True
+                if capture_node_bytes:
+                    raw = r.view(node_start_rel, node.size).peek_bytes(node.size)
+                    raw_nodes.append(FileNodeRaw(header=node, raw_bytes=raw))
                 file_nodes.append(node)
                 break
 
             payload = node.size - 4
             if payload:
+                if capture_node_bytes:
+                    raw = r.view(node_start_rel, node.size).peek_bytes(node.size)
+                    raw_nodes.append(FileNodeRaw(header=node, raw_bytes=raw))
                 r.skip(payload)
+            else:
+                if capture_node_bytes:
+                    raw = r.view(node_start_rel, node.size).peek_bytes(node.size)
+                    raw_nodes.append(FileNodeRaw(header=node, raw_bytes=raw))
 
             file_nodes.append(node)
             node_count += 1
@@ -186,6 +210,7 @@ class FileNodeListFragment:
             fcr=fcr,
             header=header,
             file_nodes=tuple(file_nodes),
+            raw_nodes=tuple(raw_nodes),
             node_count=int(node_count),
             found_chunk_terminator=bool(found_terminator),
             next_fragment=next_fragment,
@@ -198,6 +223,18 @@ class FileNodeList:
     fragments: tuple[FileNodeListFragment, ...]
     file_nodes: tuple[FileNodeHeader, ...]
     node_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class FileNodeListWithRaw:
+    list: FileNodeList
+    raw_nodes: tuple[FileNodeRaw, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FileNodeListWithNodes:
+    list: FileNodeList
+    nodes: tuple[FileNode, ...]
 
 
 def parse_file_node_list(
@@ -308,3 +345,152 @@ def parse_file_node_list(
         file_nodes=tuple(nodes),
         node_count=len(nodes),
     )
+
+
+def parse_file_node_list_with_raw(
+    reader: BinaryReader,
+    first_fragment: FileChunkReference64x32,
+    *,
+    last_count_by_list_id: dict[int, int] | None = None,
+    ctx: ParseContext | None = None,
+) -> FileNodeListWithRaw:
+    """Parse a File Node List (2.4) and also capture raw bytes per node.
+
+    This keeps the same control flow and bounds validations as parse_file_node_list,
+    but additionally returns raw node bytes (header+payload) for each non-terminator
+    node that was included in the committed-count-limited output.
+    """
+
+    if ctx is None:
+        ctx = ParseContext(strict=True)
+
+    if reader.bounds.start != 0:
+        raise OneStoreFormatError("FileNodeList must be parsed from file start", offset=reader.bounds.start)
+
+    file_size = reader.bounds.end
+    if ctx.file_size is None:
+        ctx.file_size = file_size
+    else:
+        file_size = ctx.file_size
+
+    first_fragment.validate_in_file(file_size)
+
+    fragments: list[FileNodeListFragment] = []
+    nodes: list[FileNodeHeader] = []
+    raw_nodes: list[FileNodeRaw] = []
+
+    visited: set[tuple[int, int]] = set()
+
+    current = first_fragment
+    expected_seq = 0
+    list_id: int | None = None
+    remaining_nodes: int | None = None
+
+    for _ in range(4096):
+        key = (current.stp, current.cb)
+        if key in visited:
+            raise OneStoreFormatError("FileNodeList fragment chain contains a loop", offset=current.stp)
+        visited.add(key)
+
+        frag = FileNodeListFragment.parse(
+            reader,
+            current,
+            remaining_nodes=remaining_nodes,
+            capture_node_bytes=True,
+            ctx=ctx,
+        )
+
+        if frag.header.fragment_sequence != expected_seq:
+            raise OneStoreFormatError(
+                "FileNodeListFragment sequence mismatch",
+                offset=frag.fcr.stp,
+            )
+
+        if list_id is None:
+            list_id = frag.header.list_id
+            if last_count_by_list_id is not None and list_id in last_count_by_list_id:
+                remaining_nodes = int(last_count_by_list_id[list_id])
+            else:
+                remaining_nodes = None
+        else:
+            if frag.header.list_id != list_id:
+                raise OneStoreFormatError("FileNodeListID mismatch across fragments", offset=frag.fcr.stp + 8)
+
+        fragments.append(frag)
+
+        for rn in frag.raw_nodes:
+            if not rn.header.is_chunk_terminator:
+                nodes.append(rn.header)
+                raw_nodes.append(rn)
+
+        if remaining_nodes is not None:
+            remaining_nodes -= frag.node_count
+            if remaining_nodes <= 0:
+                break
+
+        if frag.found_chunk_terminator:
+            if frag.next_fragment.is_nil() or frag.next_fragment.is_zero() or frag.next_fragment.cb == 0:
+                raise OneStoreFormatError(
+                    "ChunkTerminatorFND requires a valid nextFragment",
+                    offset=frag.fcr.stp,
+                )
+            frag.next_fragment.validate_in_file(file_size)
+            current = frag.next_fragment
+            expected_seq += 1
+            continue
+
+        if not frag.next_fragment.is_nil():
+            if frag.next_fragment.is_zero() or frag.next_fragment.cb == 0:
+                break
+            frag.next_fragment.validate_in_file(file_size)
+            current = frag.next_fragment
+            expected_seq += 1
+            continue
+
+        break
+    else:
+        raise OneStoreFormatError("FileNodeList fragment chain is unexpectedly long", offset=first_fragment.stp)
+
+    if list_id is None:
+        raise OneStoreFormatError("FileNodeList has no fragments", offset=first_fragment.stp)
+
+    base_list = FileNodeList(
+        list_id=int(list_id),
+        fragments=tuple(fragments),
+        file_nodes=tuple(nodes),
+        node_count=len(nodes),
+    )
+
+    return FileNodeListWithRaw(list=base_list, raw_nodes=tuple(raw_nodes))
+
+
+def parse_file_node_list_nodes(
+    reader: BinaryReader,
+    first_fragment: FileChunkReference64x32,
+    *,
+    last_count_by_list_id: dict[int, int] | None = None,
+    ctx: ParseContext | None = None,
+) -> FileNodeListWithNodes:
+    """Parse a File Node List (2.4) and parse each node via the generic FileNode core parser."""
+
+    if ctx is None:
+        ctx = ParseContext(strict=True)
+
+    if reader.bounds.start != 0:
+        raise OneStoreFormatError("FileNodeList must be parsed from file start", offset=reader.bounds.start)
+
+    # First pass: collect the list structure + node raw bytes.
+    out = parse_file_node_list_with_raw(
+        reader,
+        first_fragment,
+        last_count_by_list_id=last_count_by_list_id,
+        ctx=ctx,
+    )
+
+    warn_once: set[int] = set()
+    nodes: list[FileNode] = []
+    for rn in out.raw_nodes:
+        node_reader = reader.view(rn.header.offset, rn.header.size)
+        nodes.append(parse_file_node(node_reader, ctx=ctx, warn_unknown_ids=warn_once))
+
+    return FileNodeListWithNodes(list=out.list, nodes=tuple(nodes))
