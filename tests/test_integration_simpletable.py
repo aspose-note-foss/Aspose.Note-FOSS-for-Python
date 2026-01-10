@@ -25,6 +25,9 @@ from onestore.file_node_list import (  # noqa: E402
     parse_file_node_list_typed_nodes,
 )
 from onestore.file_node_types import (  # noqa: E402
+    ObjectGroupListReferenceFND,
+    ObjectGroupStartFND,
+    RootObjectReference3FND,
     ObjectSpaceManifestListReferenceFND,
     ObjectSpaceManifestListStartFND,
     ObjectSpaceManifestRootFND,
@@ -353,6 +356,31 @@ class TestIntegrationSimpleTable(unittest.TestCase):
                 if rev.odcs_default == 0x0002:
                     self.assertTrue(rev.has_encryption_marker)
 
+                # Step 11: manifest content is present and deterministic.
+                self.assertIsNotNone(rev.manifest)
+                assert rev.manifest is not None
+
+                # Root object refs are structural only; avoid fixture-specific expectations.
+                self.assertIsInstance(rev.manifest.root_objects, tuple)
+                for ro in rev.manifest.root_objects:
+                    # SimpleTable.one is a .one file: RootObjectReference3FND is expected.
+                    self.assertIsInstance(ro, RootObjectReference3FND)
+
+                # Object group lists: if present, the referenced list should start with ObjectGroupStartFND
+                # matching the ObjectGroupID.
+                self.assertIsInstance(rev.manifest.object_groups, tuple)
+                for grp in rev.manifest.object_groups:
+                    self.assertIsInstance(grp.start_oid, ExtendedGUID)
+                    self.assertEqual(grp.start_oid, grp.object_group_id)
+                    self.assertIsInstance(grp.changes, tuple)
+
+                # Global id table sequence (optional): ensure structural determinism.
+                if rev.manifest.global_id_table is not None:
+                    self.assertIsInstance(rev.manifest.global_id_table.ops, tuple)
+
+                # Inline changes should normally be empty for .one; keep it non-brittle.
+                self.assertIsInstance(rev.manifest.inline_changes, tuple)
+
             # MUST: last assignment wins for (context, role) pairs.
             # We validate internal consistency: each mapping points to an existing revision.
             for pair, rid in os.role_assignments:
@@ -368,6 +396,11 @@ class TestIntegrationSimpleTable(unittest.TestCase):
                     key = (ap.gctxid.guid, int(ap.gctxid.n), int(ap.revision_role))
                     self.assertIn(key, mapping)
                     self.assertEqual(mapping[key], (rev.rid.guid, int(rev.rid.n)))
+
+            # Step 11 encryption consistency: if any manifest has 0x07C, all must.
+            any_marker = any(r.has_encryption_marker for r in os.revisions)
+            if any_marker:
+                self.assertTrue(all(r.has_encryption_marker for r in os.revisions))
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)

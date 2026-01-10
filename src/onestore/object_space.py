@@ -2,16 +2,33 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .common_types import ExtendedGUID
+from .common_types import CompactID, ExtendedGUID
 from .chunk_refs import FileChunkReference64x32, FileNodeChunkReference
 from .errors import OneStoreFormatError
 from .file_node_list import parse_file_node_list_typed_nodes
 from .file_node_types import TypedFileNode
 from .file_node_types import (
     DEFAULT_CONTEXT_GCTXID,
+    DataSignatureGroupDefinitionFND,
+    GlobalIdTableEndFNDX,
+    GlobalIdTableEntry2FNDX,
+    GlobalIdTableEntry3FNDX,
+    GlobalIdTableEntryFNDX,
+    GlobalIdTableStart2FND,
+    GlobalIdTableStartFNDX,
+    ObjectDeclaration2LargeRefCountFND,
+    ObjectDeclaration2RefCountFND,
     ObjectSpaceManifestListReferenceFND,
     ObjectSpaceManifestListStartFND,
     ObjectDataEncryptionKeyV2FNDX,
+    ObjectGroupEndFND,
+    ObjectGroupListReferenceFND,
+    ObjectGroupStartFND,
+    ObjectInfoDependencyOverridesFND,
+    ObjectRevisionWithRefCount2FNDX,
+    ObjectRevisionWithRefCountFNDX,
+    ReadOnlyObjectDeclaration2LargeRefCountFND,
+    ReadOnlyObjectDeclaration2RefCountFND,
     RevisionManifestEndFND,
     RevisionManifestListReferenceFND,
     RevisionManifestListStartFND,
@@ -20,6 +37,8 @@ from .file_node_types import (
     RevisionManifestStart7FND,
     RevisionRoleAndContextDeclarationFND,
     RevisionRoleDeclarationFND,
+    RootObjectReference2FNDX,
+    RootObjectReference3FND,
     RootFileNodeListManifests,
     build_root_file_node_list_manifests,
 )
@@ -57,6 +76,45 @@ class RevisionSummary:
     odcs_default: int
     has_encryption_marker: bool
     assigned_pairs: tuple[RevisionRoleContextPair, ...]
+    encryption_key_ref: FileNodeChunkReference | None = None
+    manifest: "RevisionManifestContentSummary | None" = None
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectChangeSummary:
+    data_signature_group: ExtendedGUID
+    change: (
+        ObjectDeclaration2RefCountFND
+        | ObjectDeclaration2LargeRefCountFND
+        | ReadOnlyObjectDeclaration2RefCountFND
+        | ReadOnlyObjectDeclaration2LargeRefCountFND
+        | ObjectRevisionWithRefCountFNDX
+        | ObjectRevisionWithRefCount2FNDX
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectGroupSummary:
+    object_group_id: ExtendedGUID
+    ref: FileNodeChunkReference
+    start_oid: ExtendedGUID
+    changes: tuple[ObjectChangeSummary, ...]
+    has_end: bool
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalIdTableSequenceSummary:
+    start: GlobalIdTableStartFNDX | GlobalIdTableStart2FND
+    ops: tuple[GlobalIdTableEntryFNDX | GlobalIdTableEntry2FNDX | GlobalIdTableEntry3FNDX, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionManifestContentSummary:
+    object_groups: tuple[ObjectGroupSummary, ...]
+    global_id_table: GlobalIdTableSequenceSummary | None
+    root_objects: tuple[RootObjectReference2FNDX | RootObjectReference3FND, ...]
+    override_nodes: int
+    inline_changes: tuple[ObjectChangeSummary, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +281,11 @@ def _pair_sort_key(pair: RevisionRoleContextPair) -> tuple[bytes, int, int]:
 
 
 def _parse_revision_manifest_list_revisions(
-    nodes: tuple[TypedFileNode, ...], *, ctx: ParseContext
+    data: bytes | bytearray | memoryview,
+    nodes: tuple[TypedFileNode, ...],
+    *,
+    last_count_by_list_id: dict[int, int],
+    ctx: ParseContext,
 ) -> tuple[tuple[RevisionSummary, ...], tuple[tuple[RevisionRoleContextPair, ExtendedGUID], ...]]:
     if not nodes:
         raise OneStoreFormatError("Revision manifest list is empty", offset=0)
@@ -245,8 +307,11 @@ def _parse_revision_manifest_list_revisions(
     current_revision_role: int | None = None
     current_odcs_default: int | None = None
     current_has_encryption_marker = False
+    current_encryption_ref: FileNodeChunkReference | None = None
     current_encryption_required = False
     current_manifest_pos = 0
+    current_manifest_nodes: list[TypedFileNode] = []
+    current_start_kind: str | None = None
 
     # Temporary map, finalized after role assignments are known.
     revision_index_by_rid: dict[ExtendedGUID, int] = {}
@@ -299,8 +364,11 @@ def _parse_revision_manifest_list_revisions(
                 current_revision_role = int(revision_role)
                 current_odcs_default = int(odcs_default)
                 current_has_encryption_marker = False
+                current_encryption_ref = None
                 current_encryption_required = int(odcs_default) == 0x0002
                 current_manifest_pos = 1
+                current_manifest_nodes = []
+                current_start_kind = "onetoc2" if isinstance(typed, RevisionManifestStart4FND) else "one"
                 continue
 
             if isinstance(typed, RevisionManifestEndFND):
@@ -339,6 +407,7 @@ def _parse_revision_manifest_list_revisions(
 
         # Inside a revision manifest.
         current_manifest_pos += 1
+        current_manifest_nodes.append(tn)
 
         if current_manifest_pos == 2:
             if current_encryption_required and not isinstance(typed, ObjectDataEncryptionKeyV2FNDX):
@@ -348,6 +417,7 @@ def _parse_revision_manifest_list_revisions(
                 )
             if isinstance(typed, ObjectDataEncryptionKeyV2FNDX):
                 current_has_encryption_marker = True
+                current_encryption_ref = typed.ref
         else:
             if isinstance(typed, ObjectDataEncryptionKeyV2FNDX):
                 ctx.warn(
@@ -355,6 +425,7 @@ def _parse_revision_manifest_list_revisions(
                     offset=tn.node.header.offset,
                 )
                 current_has_encryption_marker = True
+                current_encryption_ref = typed.ref
 
         if isinstance(typed, (RevisionRoleDeclarationFND, RevisionRoleAndContextDeclarationFND)):
             raise OneStoreFormatError(
@@ -371,6 +442,16 @@ def _parse_revision_manifest_list_revisions(
 
             idx = len(revisions)
             revision_index_by_rid[current_rid] = idx
+
+            # Parse manifest content (Step 11): for .one/.onetoc2, still without object data decoding.
+            content = _parse_revision_manifest_content(
+                data,
+                current_manifest_nodes,
+                start_kind=current_start_kind,
+                last_count_by_list_id=last_count_by_list_id,
+                ctx=ctx,
+            )
+
             revisions.append(
                 RevisionSummary(
                     rid=current_rid,
@@ -379,7 +460,9 @@ def _parse_revision_manifest_list_revisions(
                     revision_role=int(current_revision_role),
                     odcs_default=int(current_odcs_default),
                     has_encryption_marker=bool(current_has_encryption_marker),
+                    encryption_key_ref=current_encryption_ref,
                     assigned_pairs=(),
+                    manifest=content,
                 )
             )
 
@@ -389,8 +472,11 @@ def _parse_revision_manifest_list_revisions(
             current_revision_role = None
             current_odcs_default = None
             current_has_encryption_marker = False
+            current_encryption_ref = None
             current_encryption_required = False
             current_manifest_pos = 0
+            current_manifest_nodes = []
+            current_start_kind = None
             continue
 
     if current_rid is not None:
@@ -416,7 +502,9 @@ def _parse_revision_manifest_list_revisions(
                 revision_role=rev.revision_role,
                 odcs_default=rev.odcs_default,
                 has_encryption_marker=rev.has_encryption_marker,
+                encryption_key_ref=rev.encryption_key_ref,
                 assigned_pairs=pairs_sorted,
+                manifest=rev.manifest,
             )
         )
 
@@ -428,6 +516,304 @@ def _parse_revision_manifest_list_revisions(
     )
 
     return (tuple(finalized), assignments_sorted)
+
+
+def _resolve_zero_eg() -> ExtendedGUID:
+    return ExtendedGUID(guid=b"\x00" * 16, n=0)
+
+
+def _is_nil_ref(ref: FileNodeChunkReference) -> bool:
+    return ref.cb == 0 and ref.stp in (0, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF)
+
+
+def _parse_object_group_list(
+    data: bytes | bytearray | memoryview,
+    ref: FileNodeChunkReference,
+    object_group_id: ExtendedGUID,
+    *,
+    last_count_by_list_id: dict[int, int],
+    ctx: ParseContext,
+) -> ObjectGroupSummary:
+    if _is_nil_ref(ref):
+        raise OneStoreFormatError("ObjectGroupListReferenceFND ref MUST NOT be fcrNil", offset=0)
+
+    group_list_fcr = _as_fcr64x32(ref)
+    group_list = parse_file_node_list_typed_nodes(
+        BinaryReader(data),
+        group_list_fcr,
+        last_count_by_list_id=last_count_by_list_id,
+        ctx=ctx,
+    )
+
+    start = _require_first_typed_node(
+        group_list.nodes,
+        ObjectGroupStartFND,
+        message="Object group list MUST start with ObjectGroupStartFND",
+        offset=group_list_fcr.stp,
+    )
+
+    if ctx.strict and start.oid != object_group_id:
+        raise OneStoreFormatError(
+            "ObjectGroupStartFND.oid MUST match the referring ObjectGroupListReferenceFND.ObjectGroupID",
+            offset=group_list.nodes[0].node.header.offset,
+        )
+    if not ctx.strict and start.oid != object_group_id:
+        ctx.warn(
+            "ObjectGroupStartFND.oid does not match ObjectGroupListReferenceFND.ObjectGroupID",
+            offset=group_list.nodes[0].node.header.offset,
+        )
+
+    zero_sig = _resolve_zero_eg()
+    current_sig = zero_sig
+    changes: list[ObjectChangeSummary] = []
+    has_end = False
+
+    for tn in group_list.nodes[1:]:
+        t = tn.typed
+        if isinstance(t, DataSignatureGroupDefinitionFND):
+            current_sig = t.data_signature_group
+            continue
+        if isinstance(t, ObjectGroupEndFND):
+            has_end = True
+            break
+        if isinstance(
+            t,
+            (
+                ObjectDeclaration2RefCountFND,
+                ObjectDeclaration2LargeRefCountFND,
+                ReadOnlyObjectDeclaration2RefCountFND,
+                ReadOnlyObjectDeclaration2LargeRefCountFND,
+                ObjectRevisionWithRefCountFNDX,
+                ObjectRevisionWithRefCount2FNDX,
+            ),
+        ):
+            changes.append(ObjectChangeSummary(data_signature_group=current_sig, change=t))
+
+    # Determinism: keep original order but store as tuple.
+    return ObjectGroupSummary(
+        object_group_id=object_group_id,
+        ref=ref,
+        start_oid=start.oid,
+        changes=tuple(changes),
+        has_end=has_end,
+    )
+
+
+def _parse_global_id_table_sequence(
+    manifest_nodes: list[TypedFileNode],
+    start_index: int,
+    *,
+    ctx: ParseContext,
+) -> tuple[GlobalIdTableSequenceSummary, int]:
+    start_t = manifest_nodes[start_index].typed
+    assert isinstance(start_t, (GlobalIdTableStartFNDX, GlobalIdTableStart2FND))
+
+    ops: list[GlobalIdTableEntryFNDX | GlobalIdTableEntry2FNDX | GlobalIdTableEntry3FNDX] = []
+    seen_index: set[int] = set()
+    seen_guid: set[bytes] = set()
+
+    i = start_index + 1
+    while i < len(manifest_nodes):
+        t = manifest_nodes[i].typed
+        if isinstance(t, GlobalIdTableEndFNDX):
+            return (GlobalIdTableSequenceSummary(start=start_t, ops=tuple(ops)), i + 1)
+        if isinstance(t, (GlobalIdTableStartFNDX, GlobalIdTableStart2FND)):
+            raise OneStoreFormatError(
+                "GlobalIdTableStart* encountered before GlobalIdTableEndFNDX",
+                offset=manifest_nodes[i].node.header.offset,
+            )
+        if isinstance(t, GlobalIdTableEntryFNDX):
+            if t.index in seen_index:
+                raise OneStoreFormatError(
+                    "GlobalIdTableEntryFNDX.index MUST be unique within a sequence",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            if t.guid in seen_guid:
+                raise OneStoreFormatError(
+                    "GlobalIdTableEntryFNDX.guid MUST be unique within a sequence",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            seen_index.add(t.index)
+            seen_guid.add(t.guid)
+            ops.append(t)
+            i += 1
+            continue
+        if isinstance(t, (GlobalIdTableEntry2FNDX, GlobalIdTableEntry3FNDX)):
+            ops.append(t)
+            i += 1
+            continue
+
+        raise OneStoreFormatError(
+            "Unexpected FileNode inside global id table sequence",
+            offset=manifest_nodes[i].node.header.offset,
+        )
+
+    raise OneStoreFormatError(
+        "Global id table sequence missing GlobalIdTableEndFNDX",
+        offset=manifest_nodes[-1].node.header.offset if manifest_nodes else 0,
+    )
+
+
+def _parse_revision_manifest_content(
+    data: bytes | bytearray | memoryview,
+    manifest_nodes: list[TypedFileNode],
+    *,
+    start_kind: str | None,
+    last_count_by_list_id: dict[int, int],
+    ctx: ParseContext,
+) -> RevisionManifestContentSummary:
+    object_groups: list[ObjectGroupSummary] = []
+    root_objects: list[RootObjectReference2FNDX | RootObjectReference3FND] = []
+    inline_changes: list[ObjectChangeSummary] = []
+    override_nodes = 0
+    gid_table: GlobalIdTableSequenceSummary | None = None
+
+    zero_sig = _resolve_zero_eg()
+    current_sig = zero_sig
+
+    # State machine based on docs/ms-onestore/17-revision-manifest-parsing.md.
+    # We keep it strict on ordering but permissive on unknown nodes.
+    phase = "pre"  # pre (groups) -> post_roots (no groups, no gid start) ; post_gid behaves like post_roots
+    i = 0
+    while i < len(manifest_nodes):
+        t = manifest_nodes[i].typed
+        if t is None:
+            i += 1
+            continue
+
+        # Skip encryption marker here (already validated positionally above).
+        if isinstance(t, ObjectDataEncryptionKeyV2FNDX):
+            i += 1
+            continue
+
+        if isinstance(t, ObjectInfoDependencyOverridesFND):
+            override_nodes += 1
+            i += 1
+            continue
+
+        if isinstance(t, DataSignatureGroupDefinitionFND):
+            current_sig = t.data_signature_group
+            i += 1
+            continue
+
+        if isinstance(t, ObjectGroupListReferenceFND):
+            if start_kind != "one":
+                raise OneStoreFormatError(
+                    "ObjectGroupListReferenceFND is only expected in .one revision manifests",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            if phase != "pre":
+                raise OneStoreFormatError(
+                    "Object group sequences MUST appear before the global id table and before root refs",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            if i + 1 >= len(manifest_nodes) or not isinstance(manifest_nodes[i + 1].typed, ObjectInfoDependencyOverridesFND):
+                raise OneStoreFormatError(
+                    "ObjectGroupListReferenceFND MUST be immediately followed by ObjectInfoDependencyOverridesFND",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            grp = _parse_object_group_list(
+                data,
+                t.ref,
+                t.object_group_id,
+                last_count_by_list_id=last_count_by_list_id,
+                ctx=ctx,
+            )
+            object_groups.append(grp)
+            override_nodes += 1
+            i += 2
+            continue
+
+        if isinstance(t, (GlobalIdTableStartFNDX, GlobalIdTableStart2FND)):
+            if gid_table is not None:
+                raise OneStoreFormatError(
+                    "Revision manifest MUST contain at most one global id table sequence",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            if phase != "pre":
+                raise OneStoreFormatError(
+                    "Global id table sequence MUST appear before root refs and object declarations",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            gid_table, new_i = _parse_global_id_table_sequence(manifest_nodes, i, ctx=ctx)
+            phase = "post_roots"
+            i = new_i
+            continue
+
+        if isinstance(t, RootObjectReference3FND):
+            if start_kind == "onetoc2":
+                raise OneStoreFormatError(
+                    "RootObjectReference3FND is not expected in .onetoc2 revision manifests",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            root_objects.append(t)
+            phase = "post_roots"
+            i += 1
+            continue
+
+        if isinstance(t, RootObjectReference2FNDX):
+            if start_kind != "onetoc2":
+                raise OneStoreFormatError(
+                    "RootObjectReference2FNDX is only expected in .onetoc2 revision manifests",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            if gid_table is not None:
+                # Per doc 17, root refs precede global id table in .onetoc2.
+                msg = "RootObjectReference2FNDX appeared after the global id table"
+                if ctx.strict:
+                    raise OneStoreFormatError(msg, offset=manifest_nodes[i].node.header.offset)
+                ctx.warn(msg, offset=manifest_nodes[i].node.header.offset)
+            root_objects.append(t)
+            i += 1
+            continue
+
+        if isinstance(
+            t,
+            (
+                ObjectDeclaration2RefCountFND,
+                ObjectDeclaration2LargeRefCountFND,
+                ReadOnlyObjectDeclaration2RefCountFND,
+                ReadOnlyObjectDeclaration2LargeRefCountFND,
+                ObjectRevisionWithRefCountFNDX,
+                ObjectRevisionWithRefCount2FNDX,
+            ),
+        ):
+            if start_kind != "onetoc2":
+                # In .one these typically live in object group lists, not inline.
+                ctx.warn(
+                    "Object declaration/revision node encountered inline in a .one revision manifest",
+                    offset=manifest_nodes[i].node.header.offset,
+                )
+            if gid_table is None:
+                msg = "Object declarations/revisions MUST follow the global id table sequence"
+                if ctx.strict:
+                    raise OneStoreFormatError(msg, offset=manifest_nodes[i].node.header.offset)
+                ctx.warn(msg, offset=manifest_nodes[i].node.header.offset)
+            inline_changes.append(ObjectChangeSummary(data_signature_group=current_sig, change=t))
+            phase = "post_roots"
+            i += 1
+            continue
+
+        # Unknown/unsupported nodes are ignored for now (object data, etc.).
+        i += 1
+
+    # RootRole uniqueness within a manifest.
+    seen_roles: set[int] = set()
+    for ro in root_objects:
+        if ro.root_role in seen_roles:
+            msg = "RootRole MUST NOT appear more than once within a revision manifest"
+            if ctx.strict:
+                raise OneStoreFormatError(msg, offset=0)
+            ctx.warn(msg, offset=0)
+        seen_roles.add(ro.root_role)
+
+    return RevisionManifestContentSummary(
+        object_groups=tuple(object_groups),
+        global_id_table=gid_table,
+        root_objects=tuple(root_objects),
+        override_nodes=int(override_nodes),
+        inline_changes=tuple(inline_changes),
+    )
 
 
 def parse_object_spaces_with_revisions(
@@ -516,7 +902,31 @@ def parse_object_spaces_with_revisions(
                 offset=rev_list.nodes[0].node.header.offset,
             )
 
-        revisions, assignments = _parse_revision_manifest_list_revisions(rev_list.nodes, ctx=ctx)
+        revisions, assignments = _parse_revision_manifest_list_revisions(
+            data,
+            rev_list.nodes,
+            last_count_by_list_id=last_count_by_list_id,
+            ctx=ctx,
+        )
+
+        # Step 11 validation: if any revision manifest in this object space has 0x07C,
+        # then require it for all manifests in strict mode.
+        if revisions:
+            any_marker = any(r.has_encryption_marker for r in revisions)
+            if any_marker:
+                missing = [r for r in revisions if not r.has_encryption_marker]
+                if missing:
+                    msg = "If any revision manifest in an object space is encrypted, all manifests MUST include the encryption marker"
+                    if ctx.strict:
+                        raise OneStoreFormatError(msg, offset=0)
+                    ctx.warn(msg, offset=0)
+
+                refs = {r.encryption_key_ref for r in revisions if r.encryption_key_ref is not None}
+                if len(refs) > 1:
+                    ctx.warn(
+                        "Encryption key reference differs across revision manifests in the same object space",
+                        offset=0,
+                    )
 
         out_object_spaces.append(
             ObjectSpaceRevisionsSummary(
