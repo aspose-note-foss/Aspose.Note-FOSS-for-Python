@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from .common_types import CompactID
 from .errors import OneStoreFormatError
@@ -132,6 +133,264 @@ class PropertySet:
 
 
 @dataclass(frozen=True, slots=True)
+class DecodedProperty:
+    """A decoded PropertyID/value pair.
+
+    rgdata_offset/rgdata_length are measured within this PropertySet's rgData.
+    For stream-only reference types, rgdata_length is 0.
+    """
+
+    prid: PropertyID
+    value: Any
+    rgdata_offset: int
+    rgdata_length: int
+
+
+@dataclass(frozen=True, slots=True)
+class DecodedPropertySet:
+    """Decoded PropertySet with deterministic ordering (same as rgPrids order)."""
+
+    c_properties: int
+    properties: tuple[DecodedProperty, ...]
+    rgdata_size: int
+    encoded_size: int
+
+
+@dataclass(slots=True)
+class _RefCursor:
+    oids: tuple[CompactID, ...]
+    osids: tuple[CompactID, ...] | None
+    context_ids: tuple[CompactID, ...] | None
+    i_oid: int = 0
+    i_osid: int = 0
+    i_ctx: int = 0
+
+    def take_oid(self, n: int, *, offset: int | None) -> tuple[CompactID, ...]:
+        if n < 0:
+            raise OneStoreFormatError("Reference count MUST be non-negative", offset=offset)
+        end = self.i_oid + n
+        if end > len(self.oids):
+            raise OneStoreFormatError("OIDs stream does not contain enough CompactIDs", offset=offset)
+        out = self.oids[self.i_oid : end]
+        self.i_oid = end
+        return out
+
+    def take_osid(self, n: int, *, offset: int | None) -> tuple[CompactID, ...]:
+        if self.osids is None:
+            raise OneStoreFormatError("OSIDs stream is required but not present", offset=offset)
+        if n < 0:
+            raise OneStoreFormatError("Reference count MUST be non-negative", offset=offset)
+        end = self.i_osid + n
+        if end > len(self.osids):
+            raise OneStoreFormatError("OSIDs stream does not contain enough CompactIDs", offset=offset)
+        out = self.osids[self.i_osid : end]
+        self.i_osid = end
+        return out
+
+    def take_context(self, n: int, *, offset: int | None) -> tuple[CompactID, ...]:
+        if self.context_ids is None:
+            raise OneStoreFormatError("ContextIDs stream is required but not present", offset=offset)
+        if n < 0:
+            raise OneStoreFormatError("Reference count MUST be non-negative", offset=offset)
+        end = self.i_ctx + n
+        if end > len(self.context_ids):
+            raise OneStoreFormatError("ContextIDs stream does not contain enough CompactIDs", offset=offset)
+        out = self.context_ids[self.i_ctx : end]
+        self.i_ctx = end
+        return out
+
+
+def _decode_property_set_from_reader(
+    reader: BinaryReader,
+    cursor: _RefCursor,
+    *,
+    ctx: ParseContext,
+) -> DecodedPropertySet:
+    """Decode a PropertySet encoded at the current reader position.
+
+    This consumes exactly the bytes for this property set from `reader`.
+    """
+
+    start = reader.tell()
+    if reader.remaining() < 2:
+        raise OneStoreFormatError("PropertySet missing cProperties", offset=reader.tell())
+
+    c_properties = int(reader.read_u16())
+    needed_prids = c_properties * 4
+    if reader.remaining() < needed_prids:
+        raise OneStoreFormatError("PropertySet rgPrids exceeds available data", offset=reader.tell())
+
+    prids = tuple(PropertyID.parse(reader) for _ in range(c_properties))
+
+    # rgData starts immediately after rgPrids and continues with sizes implied by each PropertyID.
+    rgdata_start = reader.tell()
+
+    props: list[DecodedProperty] = []
+    for prid in prids:
+        props.append(_decode_one_property(prid, reader, cursor, rgdata_start=rgdata_start, ctx=ctx))
+
+    rgdata_end = reader.tell()
+    rgdata_size = rgdata_end - rgdata_start
+    encoded_size = rgdata_end - start
+
+    return DecodedPropertySet(
+        c_properties=c_properties,
+        properties=tuple(props),
+        rgdata_size=int(rgdata_size),
+        encoded_size=int(encoded_size),
+    )
+
+
+def _decode_one_property(
+    prid: PropertyID,
+    reader: BinaryReader,
+    cursor: _RefCursor,
+    *,
+    rgdata_start: int,
+    ctx: ParseContext,
+) -> DecodedProperty:
+    """Decode a single property value from rgData and/or reference streams."""
+
+    t = int(prid.prop_type)
+    rg_off = int(reader.tell() - rgdata_start)
+
+    # 0x1: NoData
+    if t == 0x01:
+        return DecodedProperty(prid=prid, value=None, rgdata_offset=rg_off, rgdata_length=0)
+
+    # 0x2: Bool (value in boolValue bit)
+    if t == 0x02:
+        return DecodedProperty(prid=prid, value=bool(prid.bool_value), rgdata_offset=rg_off, rgdata_length=0)
+
+    # Fixed-size values in rgData
+    fixed_sizes = {0x03: 1, 0x04: 2, 0x05: 4, 0x06: 8}
+    if t in fixed_sizes:
+        n = fixed_sizes[t]
+        if reader.remaining() < n:
+            raise OneStoreFormatError("PropertySet rgData fixed-size value exceeds available data", offset=reader.tell())
+        raw = reader.read_bytes(n)
+        return DecodedProperty(prid=prid, value=bytes(raw), rgdata_offset=rg_off, rgdata_length=n)
+
+    # Variable-size container
+    if t == 0x07:
+        start = reader.tell()
+        box = PrtFourBytesOfLengthFollowedByData.parse(reader, ctx=ctx)
+        length = int(reader.tell() - start)
+        return DecodedProperty(prid=prid, value=bytes(box.data), rgdata_offset=rg_off, rgdata_length=length)
+
+    # Reference types: value(s) come from the corresponding streams.
+    if t == 0x08:  # OID
+        (oid,) = cursor.take_oid(1, offset=reader.tell())
+        return DecodedProperty(prid=prid, value=oid, rgdata_offset=rg_off, rgdata_length=0)
+    if t == 0x09:  # OID array (count in rgData as u32)
+        if reader.remaining() < 4:
+            raise OneStoreFormatError("PropertySet missing OID array length", offset=reader.tell())
+        count = int(reader.read_u32())
+        oids = cursor.take_oid(count, offset=reader.tell() - 4)
+        return DecodedProperty(prid=prid, value=tuple(oids), rgdata_offset=rg_off, rgdata_length=4)
+
+    if t == 0x0A:  # OSID
+        (osid,) = cursor.take_osid(1, offset=reader.tell())
+        return DecodedProperty(prid=prid, value=osid, rgdata_offset=rg_off, rgdata_length=0)
+    if t == 0x0B:  # OSID array
+        if reader.remaining() < 4:
+            raise OneStoreFormatError("PropertySet missing OSID array length", offset=reader.tell())
+        count = int(reader.read_u32())
+        osids = cursor.take_osid(count, offset=reader.tell() - 4)
+        return DecodedProperty(prid=prid, value=tuple(osids), rgdata_offset=rg_off, rgdata_length=4)
+
+    if t == 0x0C:  # ContextID
+        (cid,) = cursor.take_context(1, offset=reader.tell())
+        return DecodedProperty(prid=prid, value=cid, rgdata_offset=rg_off, rgdata_length=0)
+    if t == 0x0D:  # ContextID array
+        if reader.remaining() < 4:
+            raise OneStoreFormatError("PropertySet missing ContextID array length", offset=reader.tell())
+        count = int(reader.read_u32())
+        cids = cursor.take_context(count, offset=reader.tell() - 4)
+        return DecodedProperty(prid=prid, value=tuple(cids), rgdata_offset=rg_off, rgdata_length=4)
+
+    # prtArrayOfPropertyValues (currently: array of nested PropertySet)
+    if t == 0x10:
+        start = reader.tell()
+        if reader.remaining() < 4:
+            raise OneStoreFormatError("prtArrayOfPropertyValues missing cProperties", offset=reader.tell())
+        c = int(reader.read_u32())
+        if c == 0:
+            return DecodedProperty(prid=prid, value=tuple(), rgdata_offset=rg_off, rgdata_length=4)
+
+        if reader.remaining() < 4:
+            raise OneStoreFormatError("prtArrayOfPropertyValues missing prid", offset=reader.tell())
+        elem_prid = PropertyID.parse(reader)
+        if elem_prid.prop_type != 0x11:
+            msg = "prtArrayOfPropertyValues.prid.type MUST be 0x11 (PropertySet)"
+            if ctx.strict:
+                raise OneStoreFormatError(msg, offset=start)
+            ctx.warn(msg, offset=start)
+
+        items: list[DecodedPropertySet] = []
+        for _ in range(c):
+            items.append(_decode_property_set_from_reader(reader, cursor, ctx=ctx))
+
+        length = int(reader.tell() - start)
+        return DecodedProperty(prid=prid, value=tuple(items), rgdata_offset=rg_off, rgdata_length=length)
+
+    # Nested PropertySet
+    if t == 0x11:
+        start = reader.tell()
+        nested = _decode_property_set_from_reader(reader, cursor, ctx=ctx)
+        length = int(reader.tell() - start)
+        return DecodedProperty(prid=prid, value=nested, rgdata_offset=rg_off, rgdata_length=length)
+
+    raise OneStoreFormatError(f"Unsupported PropertyID.type 0x{t:02X}", offset=reader.tell())
+
+
+def decode_property_set(
+    prop_set: PropertySet,
+    *,
+    oids: tuple[CompactID, ...],
+    osids: tuple[CompactID, ...] | None,
+    context_ids: tuple[CompactID, ...] | None,
+    ctx: ParseContext,
+) -> DecodedPropertySet:
+    """Decode a structurally parsed PropertySet (Step 12) into typed values (Step 13).
+
+    Reference values are returned as CompactID(s) extracted from the corresponding streams.
+    No GUID resolution is done at this layer.
+    """
+
+    r = BinaryReader(prop_set.rg_data)
+    cursor = _RefCursor(oids=oids, osids=osids, context_ids=context_ids)
+
+    props: list[DecodedProperty] = []
+    rgdata_start = r.tell()
+    for prid in prop_set.rg_prids:
+        props.append(_decode_one_property(prid, r, cursor, rgdata_start=rgdata_start, ctx=ctx))
+
+    if r.remaining() != 0:
+        msg = "PropertySet rgData was not fully consumed"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=r.tell())
+        ctx.warn(msg, offset=r.tell())
+
+    # These are not MUST-level invariants, but are useful sanity signals.
+    if cursor.i_oid != len(cursor.oids):
+        ctx.warn("OIDs stream was not fully consumed", offset=None)
+    if cursor.osids is not None and cursor.i_osid != len(cursor.osids):
+        ctx.warn("OSIDs stream was not fully consumed", offset=None)
+    if cursor.context_ids is not None and cursor.i_ctx != len(cursor.context_ids):
+        ctx.warn("ContextIDs stream was not fully consumed", offset=None)
+
+    rgdata_size = len(prop_set.rg_data)
+    encoded_size = 2 + 4 * int(prop_set.c_properties) + rgdata_size
+    return DecodedPropertySet(
+        c_properties=int(prop_set.c_properties),
+        properties=tuple(props),
+        rgdata_size=int(rgdata_size),
+        encoded_size=int(encoded_size),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class ObjectSpaceObjectPropSet:
     """ObjectSpaceObjectPropSet (2.6.1), structural parse.
 
@@ -206,6 +465,17 @@ class ObjectSpaceObjectPropSet:
             context_ids=context_ids,
             property_set=prop_no_pad,
             padding=padding,
+        )
+
+    def decode_property_set(self, *, ctx: ParseContext) -> DecodedPropertySet:
+        """Decode the embedded PropertySet using this prop set's reference streams."""
+
+        return decode_property_set(
+            self.property_set,
+            oids=self.oids.body,
+            osids=None if self.osids is None else self.osids.body,
+            context_ids=None if self.context_ids is None else self.context_ids.body,
+            ctx=ctx,
         )
 
 

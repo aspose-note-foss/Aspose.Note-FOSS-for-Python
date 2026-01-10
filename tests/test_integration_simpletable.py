@@ -17,6 +17,7 @@ from onestore.io import BinaryReader  # noqa: E402
 from onestore.object_space import parse_object_spaces_summary  # noqa: E402
 from onestore.object_space import parse_object_spaces_with_revisions  # noqa: E402
 from onestore.object_space import parse_object_spaces_with_resolved_ids  # noqa: E402
+from onestore.object_data import parse_object_space_object_prop_set_from_ref  # noqa: E402
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
@@ -28,6 +29,10 @@ from onestore.file_node_list import (  # noqa: E402
 from onestore.file_node_types import (  # noqa: E402
     ObjectGroupListReferenceFND,
     ObjectGroupStartFND,
+    ObjectDeclaration2LargeRefCountFND,
+    ObjectDeclaration2RefCountFND,
+    ReadOnlyObjectDeclaration2LargeRefCountFND,
+    ReadOnlyObjectDeclaration2RefCountFND,
     RootObjectReference3FND,
     ObjectSpaceManifestListReferenceFND,
     ObjectSpaceManifestListStartFND,
@@ -452,6 +457,66 @@ class TestIntegrationSimpleTable(unittest.TestCase):
                 for oid in rev.resolved_change_oids:
                     self.assertIsInstance(oid, ExtendedGUID)
                     self.assertNotEqual(oid.guid, b"\x00" * 16)
+
+    def test_step13_can_decode_some_object_prop_set_deterministically(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        step10 = parse_object_spaces_with_revisions(data, ctx=ParseContext(strict=True, file_size=file_size))
+
+        found = False
+
+        for os in step10.object_spaces:
+            for rev in os.revisions:
+                if rev.manifest is None:
+                    continue
+                for grp in rev.manifest.object_groups:
+                    for ch in grp.changes:
+                        change = ch.change
+
+                        ref = None
+                        jcid = None
+
+                        if isinstance(change, (ObjectDeclaration2RefCountFND, ObjectDeclaration2LargeRefCountFND)):
+                            ref = change.ref
+                            jcid = change.jcid
+                        elif isinstance(
+                            change,
+                            (ReadOnlyObjectDeclaration2RefCountFND, ReadOnlyObjectDeclaration2LargeRefCountFND),
+                        ):
+                            ref = change.base.ref
+                            jcid = change.base.jcid
+
+                        if ref is None or jcid is None:
+                            continue
+                        if not jcid.is_property_set:
+                            continue
+
+                        try:
+                            ps = parse_object_space_object_prop_set_from_ref(
+                                data,
+                                stp=int(ref.stp),
+                                cb=int(ref.cb),
+                                ctx=ParseContext(strict=True, file_size=file_size),
+                            )
+                            decoded1 = ps.decode_property_set(ctx=ParseContext(strict=True, file_size=file_size))
+                            decoded2 = ps.decode_property_set(ctx=ParseContext(strict=True, file_size=file_size))
+                        except OneStoreFormatError:
+                            # Not all property-set JCIDs necessarily point to a decodable prop set in this step.
+                            continue
+
+                        self.assertEqual(decoded1, decoded2)
+                        self.assertIsInstance(decoded1.properties, tuple)
+                        found = True
+                        break
+                    if found:
+                        break
+                if found:
+                    break
+            if found:
+                break
+
+        self.assertTrue(found, "No decodable ObjectSpaceObjectPropSet found in fixture")
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)

@@ -27,6 +27,8 @@ from .object_space import (
     parse_object_spaces_with_revisions,
 )
 from .object_data import (
+    DecodedProperty,
+    DecodedPropertySet,
     ObjectSpaceObjectPropSet,
     ObjectSpaceObjectStream,
     ObjectSpaceObjectStreamHeader,
@@ -34,6 +36,7 @@ from .object_data import (
     PropertySet,
     PrtArrayOfPropertyValues,
     PrtFourBytesOfLengthFollowedByData,
+    decode_property_set,
     parse_object_space_object_prop_set_from_ref,
 )
 from .txn_log import parse_transaction_log
@@ -65,11 +68,14 @@ __all__ = [
     "parse_file_node_list_with_raw",
     "parse_transaction_log",
     "ObjectSpaceObjectPropSet",
+    "DecodedProperty",
+    "DecodedPropertySet",
     "ObjectSpaceObjectStream",
     "ObjectSpaceObjectStreamHeader",
     "PropertyID",
     "PropertySet",
     "PrtArrayOfPropertyValues",
     "PrtFourBytesOfLengthFollowedByData",
+    "decode_property_set",
     "parse_object_space_object_prop_set_from_ref",
 ]
