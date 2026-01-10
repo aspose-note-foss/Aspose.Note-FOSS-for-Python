@@ -1,7 +1,7 @@
 """Test/dev convenience: allow importing `onestore` from `src/` without installation.
 
 Python auto-imports `sitecustomize` (if present on sys.path) during startup.
-Keeping this tiny helps `unittest` runs that don't load `pytest`'s conftest.
+Keeping this tiny helps local runs that don't install the project.
 """
 
 from __future__ import annotations
