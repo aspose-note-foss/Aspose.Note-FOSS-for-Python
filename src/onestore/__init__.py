@@ -47,6 +47,11 @@ from .file_data import (
     parse_file_data_store_index,
     parse_file_data_store_object_from_ref,
 )
+from .hashed_chunk_list import (
+    HashedChunkListEntry,
+    parse_hashed_chunk_list_entries,
+    parse_hashed_chunk_list_index,
+)
 from .txn_log import parse_transaction_log
 
 __all__ = [
@@ -92,4 +97,7 @@ __all__ = [
     "parse_file_data_reference",
     "parse_file_data_store_index",
     "parse_file_data_store_object_from_ref",
+    "HashedChunkListEntry",
+    "parse_hashed_chunk_list_entries",
+    "parse_hashed_chunk_list_index",
 ]

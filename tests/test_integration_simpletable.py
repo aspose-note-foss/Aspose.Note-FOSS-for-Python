@@ -24,6 +24,9 @@ from onestore.file_data import (  # noqa: E402
     parse_file_data_store_index,
     parse_file_data_store_object_from_ref,
 )
+from onestore.hashed_chunk_list import (  # noqa: E402
+    parse_hashed_chunk_list_entries,
+)
 from onestore.parse_context import ParseContext  # noqa: E402
 from onestore.txn_log import TransactionLogFragment  # noqa: E402
 from onestore.txn_log import parse_transaction_log  # noqa: E402
@@ -561,6 +564,36 @@ class TestIntegrationSimpleTable(unittest.TestCase):
             index=idx1,
         )
         self.assertEqual(resolved, obj.file_data)
+
+    def test_step15_hashed_chunk_list_is_deterministic_and_in_bounds(self) -> None:
+        data = self.data
+        file_size = len(data)
+
+        header = Header.parse(BinaryReader(data), ctx=ParseContext(strict=True, file_size=file_size))
+        if header.fcr_hashed_chunk_list.is_zero() or header.fcr_hashed_chunk_list.is_nil():
+            raise unittest.SkipTest("No hashed chunk list in fixture")
+
+        entries1 = parse_hashed_chunk_list_entries(data, ctx=ParseContext(strict=True, file_size=file_size))
+        entries2 = parse_hashed_chunk_list_entries(data, ctx=ParseContext(strict=True, file_size=file_size))
+        self.assertEqual(entries1, entries2)
+
+        # Basic structural invariants only.
+        self.assertIsInstance(entries1, tuple)
+        self.assertGreaterEqual(len(entries1), 1)
+
+        for e in entries1:
+            self.assertGreaterEqual(int(e.stp), 0)
+            self.assertGreater(int(e.cb), 0)
+            self.assertLessEqual(int(e.stp) + int(e.cb), file_size)
+            self.assertIsInstance(e.md5, (bytes, bytearray))
+            self.assertEqual(len(e.md5), 16)
+
+        # Optional: validate MD5 for a single entry to avoid heavy work.
+        _ = parse_hashed_chunk_list_entries(
+            data,
+            ctx=ParseContext(strict=True, file_size=file_size),
+            validate_md5=True,
+        )
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)

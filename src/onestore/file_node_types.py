@@ -292,6 +292,17 @@ class ReadOnlyObjectDeclaration2LargeRefCountFND:
 
 
 @dataclass(frozen=True, slots=True)
+class HashedChunkDescriptor2FND:
+    """HashedChunkDescriptor2FND (0x0C2, BaseType=1).
+
+    Provides an MD5 hash for the blob referenced by `blob_ref`.
+    """
+
+    blob_ref: FileNodeChunkReference
+    guid_hash: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class ObjectRevisionWithRefCountFNDX:
     """ObjectRevisionWithRefCountFNDX (0x041)."""
 
@@ -347,6 +358,7 @@ KnownFileNodeType = (
     | ReadOnlyObjectDeclaration2LargeRefCountFND
     | ObjectRevisionWithRefCountFNDX
     | ObjectRevisionWithRefCount2FNDX
+    | HashedChunkDescriptor2FND
 )
 
 
@@ -1287,6 +1299,28 @@ def _parse_readonly_object_declaration2_large_refcount_fnd(
     return ReadOnlyObjectDeclaration2LargeRefCountFND(base=base, md5_hash=md5_hash)
 
 
+def _parse_hashed_chunk_descriptor2_fnd(node: FileNode, ctx: ParseContext) -> HashedChunkDescriptor2FND:
+    # Spec (docs/ms-onestore/15-hashed-chunk-list.md): BaseType=1, FileNodeChunkReference + 16-byte MD5.
+    if node.header.base_type != 1:
+        msg = "HashedChunkDescriptor2FND MUST have BaseType==1"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
+    if node.chunk_ref is None:
+        raise OneStoreFormatError(
+            "HashedChunkDescriptor2FND MUST contain a FileNodeChunkReference",
+            offset=node.header.offset,
+        )
+    if len(node.fnd) != 16:
+        raise OneStoreFormatError(
+            "HashedChunkDescriptor2FND payload MUST be 16 bytes (MD5)",
+            offset=node.header.offset,
+        )
+
+    guid_hash = bytes(node.fnd)
+    return HashedChunkDescriptor2FND(blob_ref=node.chunk_ref, guid_hash=guid_hash)
+
+
 def _parse_object_revision_with_refcount_fndx(node: FileNode, ctx: ParseContext) -> ObjectRevisionWithRefCountFNDX:
     if node.header.base_type not in (1, 2):
         msg = "ObjectRevisionWithRefCountFNDX MUST have BaseType==1 or BaseType==2"
@@ -1397,6 +1431,7 @@ FILE_NODE_TYPE_PARSERS: dict[int, FileNodeTypeParser] = {
     0x0B8: _parse_object_group_end_fnd,
     0x0C4: _parse_readonly_object_declaration2_refcount_fnd,
     0x0C5: _parse_readonly_object_declaration2_large_refcount_fnd,
+    0x0C2: _parse_hashed_chunk_descriptor2_fnd,
     0x041: _parse_object_revision_with_refcount_fndx,
     0x042: _parse_object_revision_with_refcount2_fndx,
 }
