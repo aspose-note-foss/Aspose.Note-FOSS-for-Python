@@ -12,6 +12,7 @@ from onestore.chunk_refs import FileChunkReference32, parse_filenode_chunk_refer
 from onestore.common_types import ExtendedGUID, StringInStorageBuffer  # noqa: E402
 from onestore.crc import crc32_rfc3309  # noqa: E402
 from onestore.errors import OneStoreFormatError  # noqa: E402
+from onestore.header import GUID_FILE_FORMAT, GUID_FILE_TYPE_ONE, Header  # noqa: E402
 from onestore.io import BinaryReader  # noqa: E402
 
 
@@ -34,6 +35,27 @@ class TestIntegrationSimpleTable(unittest.TestCase):
     def test_crc32_whole_file_matches_known_vector(self) -> None:
         # Regression guard: if the fixture changes, this will change.
         self.assertEqual(crc32_rfc3309(self.data), 0x77B62BD6)
+
+    def test_parse_header_and_basic_invariants(self) -> None:
+        r = BinaryReader(self.data)
+        header = Header.parse(r)
+
+        self.assertEqual(header.file_format_uuid, GUID_FILE_FORMAT)
+        self.assertEqual(header.file_type_uuid, GUID_FILE_TYPE_ONE)
+        self.assertNotEqual(header.c_transactions_in_log, 0)
+        self.assertEqual(header.grf_debug_log_flags, 0)
+
+        self.assertFalse(header.fcr_transaction_log.is_zero())
+        self.assertFalse(header.fcr_transaction_log.is_nil())
+        self.assertFalse(header.fcr_file_node_list_root.is_zero())
+        self.assertFalse(header.fcr_file_node_list_root.is_nil())
+
+        # Bounds are enforced during parsing, but keep explicit guards in the test.
+        self.assertLessEqual(header.fcr_transaction_log.stp + header.fcr_transaction_log.cb, len(self.data))
+        self.assertLessEqual(
+            header.fcr_file_node_list_root.stp + header.fcr_file_node_list_root.cb,
+            len(self.data),
+        )
 
     def test_binary_reader_view_matches_slices(self) -> None:
         r = BinaryReader(self.data)
