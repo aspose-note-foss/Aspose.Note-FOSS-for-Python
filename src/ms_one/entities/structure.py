@@ -69,10 +69,41 @@ class ListNode(BaseNode):
 
 
 @dataclass(frozen=True, slots=True)
+class TextStyle:
+    """Best-effort style information for a text run."""
+
+    bold: bool | None = None
+    italic: bool | None = None
+    underline: bool | None = None
+    strikethrough: bool | None = None
+    superscript: bool | None = None
+    subscript: bool | None = None
+
+    font_name: str | None = None
+    font_size_pt: float | None = None
+    font_color: int | None = None
+    highlight_color: int | None = None
+    language_id: int | None = None
+
+    hyperlink: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TextRun:
+    """A contiguous run of characters in a RichText node."""
+
+    start: int
+    end: int
+    style: TextStyle
+
+
+@dataclass(frozen=True, slots=True)
 class RichText(BaseNode):
     text: str | None
     # Best-effort paragraph font size in points (from ParagraphStyleObject FontSize).
     font_size_pt: float | None = None
+    # Per-run formatting extracted from TextRunIndex/TextRunFormatting.
+    runs: tuple[TextRun, ...] = ()
     # Zero or more note tags associated with this paragraph.
     tags: tuple["NoteTag", ...] = ()
 

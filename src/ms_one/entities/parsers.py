@@ -53,9 +53,21 @@ from ..spec_ids import (
     PID_RICH_EDIT_TEXT_UNICODE,
     PID_NUMBER_LIST_FORMAT,
     PID_SECTION_DISPLAY_NAME,
+    PID_TEXT_RUN_INDEX,
     PID_TEXT_EXTENDED_ASCII,
     PID_TEXT_RUN_DATA_OBJECT,
     PID_TEXT_RUN_FORMATTING,
+    PID_BOLD,
+    PID_ITALIC,
+    PID_UNDERLINE,
+    PID_STRIKETHROUGH,
+    PID_SUPERSCRIPT,
+    PID_SUBSCRIPT,
+    PID_FONT,
+    PID_FONT_COLOR,
+    PID_HIGHLIGHT,
+    PID_HYPERLINK,
+    PID_WZ_HYPERLINK_URL,
  )
 from ..types import decode_text_extended_ascii, decode_wz_in_atom
 
@@ -72,6 +84,8 @@ from .structure import (
     PageMetaData,
     PageSeries,
     RichText,
+    TextRun,
+    TextStyle,
     Section,
     SectionMetaData,
     Table,
@@ -121,6 +135,180 @@ def _first_font_size_pt_from_text_run_formatting(rec: ObjectRecord, *, state: "P
         return float(half_points) / 2.0
 
     return None
+
+
+def _decode_u32_array_le(b: bytes | None) -> tuple[int, ...]:
+    if b is None or not b:
+        return ()
+    if (len(b) % 4) != 0:
+        # Best-effort: ignore trailing bytes.
+        b = b[: len(b) - (len(b) % 4)]
+    return tuple(int.from_bytes(b[i : i + 4], "little", signed=False) for i in range(0, len(b), 4))
+
+
+def _wz_from_props(props, pid_raw: int, *, state: "ParseState") -> str | None:
+    if props is None:
+        return None
+    b = get_bytes(props, pid_raw)
+    if b is None:
+        return None
+    try:
+        return decode_wz_in_atom(b, ctx=state.ctx)
+    except Exception:
+        return None
+
+
+def _style_from_formatting_oid(oid: ExtendedGUID, *, state: "ParseState") -> TextStyle:
+    rec = state.index.get(oid)
+    props = None if rec is None else rec.properties
+
+    def _bool(pid_raw: int) -> bool | None:
+        if props is None:
+            return None
+        p = get_prop(props, pid_raw)
+        if p is None or not isinstance(p.value, bool):
+            return None
+        return bool(p.value)
+
+    half_points = _u16_from_bytes(get_bytes(props, PID_FONT_SIZE)) if props is not None else None
+    font_size_pt = None if half_points is None else (float(half_points) / 2.0)
+
+    font_name = _wz_from_props(props, PID_FONT, state=state)
+    hyperlink_url = _wz_from_props(props, PID_WZ_HYPERLINK_URL, state=state)
+
+    # Some files set a boolean Hyperlink flag separately; keep URL as the source of truth.
+    if hyperlink_url is None and props is not None:
+        _ = get_prop(props, PID_HYPERLINK)
+
+    return TextStyle(
+        bold=_bool(PID_BOLD),
+        italic=_bool(PID_ITALIC),
+        underline=_bool(PID_UNDERLINE),
+        strikethrough=_bool(PID_STRIKETHROUGH),
+        superscript=_bool(PID_SUPERSCRIPT),
+        subscript=_bool(PID_SUBSCRIPT),
+        font_name=font_name,
+        font_size_pt=font_size_pt,
+        font_color=_u32_from_bytes(get_bytes(props, PID_FONT_COLOR)) if props is not None else None,
+        highlight_color=_u32_from_bytes(get_bytes(props, PID_HIGHLIGHT)) if props is not None else None,
+        hyperlink=hyperlink_url,
+    )
+
+
+def _infer_hyperlink_spans_from_text(text: str) -> list[tuple[int, int, str]]:
+    """Infer hyperlink span(s) from embedded field codes in RichEditTextUnicode.
+
+    Observed in fixtures: OneNote stores hyperlink field instructions inline using
+    Unicode noncharacter U+FDDF followed by `HYPERLINK "url"` and then the display
+    text immediately after the closing quote.
+
+    Returns spans as (start, end, url) with [start, end) in the original string.
+    """
+
+    marker = "\ufddf"
+    out: list[tuple[int, int, str]] = []
+
+    i = 0
+    while True:
+        m = text.find(marker, i)
+        if m < 0:
+            break
+
+        # Expect `\ufddfHYPERLINK`.
+        kw = "HYPERLINK"
+        kw_i = text.find(kw, m + 1)
+        if kw_i != m + 1:
+            i = m + 1
+            continue
+
+        q1 = text.find('"', kw_i + len(kw))
+        q2 = -1 if q1 < 0 else text.find('"', q1 + 1)
+        if q1 < 0 or q2 < 0:
+            i = m + 1
+            continue
+
+        url = text[q1 + 1 : q2]
+        display_start = q2 + 1
+
+        # Heuristic end: first '.' after the field, otherwise next marker, otherwise EOL.
+        dot = text.find('.', display_start)
+        next_marker = text.find(marker, display_start)
+        candidates = [x for x in (dot, next_marker) if x >= 0]
+        display_end = min(candidates) if candidates else len(text)
+
+        if display_end > display_start and url:
+            out.append((display_start, display_end, url))
+
+        i = display_end
+
+    return out
+
+
+def _extract_text_runs(rec: ObjectRecord, text: str | None, *, state: "ParseState") -> tuple[TextRun, ...]:
+    if rec.properties is None:
+        return ()
+    if not text:
+        return ()
+
+    ends = list(_decode_u32_array_le(get_bytes(rec.properties, PID_TEXT_RUN_INDEX)))
+    if not ends:
+        return ()
+
+    # In MS-ONE, TextRunIndex is a list of CP end positions (0-based, inclusive).
+    # Defensive clamp to text length.
+    max_cp = max(0, len(text) - 1)
+    ends = [min(int(e), max_cp) for e in ends]
+
+    fmt_oids = get_oid_array(rec.properties, PID_TEXT_RUN_FORMATTING)
+    if not fmt_oids:
+        return ()
+
+    # Empirically, some files include an extra leading formatting object.
+    run_count = len(ends)
+    start_offset = 0
+    if len(fmt_oids) == run_count + 1:
+        start_offset = 1
+
+    runs: list[TextRun] = []
+    start = 0
+    for i in range(run_count):
+        end_inclusive = ends[i]
+        end_exclusive = int(end_inclusive) + 1
+        if end_exclusive <= start:
+            continue
+
+        oid_i = i + start_offset
+        style = TextStyle()
+        if 0 <= oid_i < len(fmt_oids):
+            fmt_oid = fmt_oids[oid_i]
+            if isinstance(fmt_oid, ExtendedGUID):
+                style = _style_from_formatting_oid(fmt_oid, state=state)
+
+        runs.append(TextRun(start=int(start), end=int(end_exclusive), style=style))
+        start = end_exclusive
+        if start >= len(text):
+            break
+
+    # If indices stop short, extend with the last known style.
+    if start < len(text):
+        last_style = runs[-1].style if runs else TextStyle()
+        runs.append(TextRun(start=int(start), end=int(len(text)), style=last_style))
+
+    # Infer hyperlinks from embedded field codes if the formatting objects do not carry URL.
+    spans = _infer_hyperlink_spans_from_text(text)
+    if spans:
+        patched: list[TextRun] = []
+        for r in runs:
+            style = r.style
+            if style.hyperlink is None:
+                for hs, he, url in spans:
+                    if r.start < he and r.end > hs:
+                        style = replace(style, hyperlink=url)
+                        break
+            patched.append(replace(r, style=style))
+        runs = patched
+
+    return tuple(runs)
 
 
 def _extract_note_tags(rec: ObjectRecord, *, state: "ParseState") -> tuple[NoteTag, ...]:
@@ -791,6 +979,7 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
             if b is not None:
                 text = decode_text_extended_ascii(b, ctx=state.ctx)
         font_size_pt = _first_font_size_pt_from_text_run_formatting(rec, state=state)
+        runs = _extract_text_runs(rec, text, state=state)
         tags = _extract_note_tags(rec, state=state)
         return RichText(
             oid=oid,
@@ -798,6 +987,7 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
             raw_properties=rec.properties,
             text=text,
             font_size_pt=font_size_pt,
+            runs=runs,
             tags=tags,
         )
 

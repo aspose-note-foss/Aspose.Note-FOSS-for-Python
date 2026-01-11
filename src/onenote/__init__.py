@@ -68,6 +68,9 @@ Example: Extract All Text
 from .document import Document
 from .elements import (
     Element,
+    NoteTag,
+    TextStyle,
+    TextRun,
     Page,
     Title,
     Outline,
@@ -83,6 +86,9 @@ from .elements import (
 __all__ = [
     "Document",
     "Element",
+    "NoteTag",
+    "TextStyle",
+    "TextRun",
     "Page",
     "Title",
     "Outline",

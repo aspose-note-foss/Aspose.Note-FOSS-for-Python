@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterator, TYPE_CHECKING
-from uuid import UUID
 
 if TYPE_CHECKING:
     from .document import Document
@@ -36,6 +35,66 @@ class Element:
         return iter(())
 
 
+@dataclass
+class NoteTag:
+    """A note tag associated with a paragraph or embedded object.
+
+    This is a best-effort public representation of MS-ONE note tags. Some
+    fields are OneNote-specific (e.g. shape/icon ids) and may be absent.
+    """
+
+    shape: int | None = None
+    """Tag shape/icon id (MS-ONE NoteTagShape)."""
+
+    label: str | None = None
+    """Human-readable label for normal tags (MS-ONE NoteTagLabel)."""
+
+    text_color: int | None = None
+    """Text color as raw 32-bit value when present (MS-ONE NoteTagTextColor)."""
+
+    highlight_color: int | None = None
+    """Highlight color as raw 32-bit value when present (MS-ONE NoteTagHighlightColor)."""
+
+    created: int | None = None
+    """Creation timestamp as raw 32-bit value (MS-ONE NoteTagCreated/Time32)."""
+
+    completed: int | None = None
+    """Completion timestamp as raw 32-bit value (MS-ONE NoteTagCompleted/Time32)."""
+
+
+@dataclass
+class TextStyle:
+    """Best-effort style information for a rich-text run."""
+
+    bold: bool | None = None
+    italic: bool | None = None
+    underline: bool | None = None
+    strikethrough: bool | None = None
+    superscript: bool | None = None
+    subscript: bool | None = None
+
+    font_name: str | None = None
+    font_size_pt: float | None = None
+    font_color: int | None = None
+    highlight_color: int | None = None
+    language_id: int | None = None
+
+    hyperlink: str | None = None
+    """Hyperlink URL associated with this run (MS-ONE WzHyperlinkUrl)."""
+
+
+@dataclass
+class TextRun:
+    """A contiguous styled segment of a RichText string.
+
+    Indices are character positions (CP) into RichText.text.
+    """
+
+    start: int = 0
+    end: int = 0
+    style: TextStyle = field(default_factory=TextStyle)
+
+
 def _walk_elements(root: "Element") -> Iterator["Element"]:
     """Depth-first walk over all descendants of an element (excluding root)."""
     for child in root.iter_children():
@@ -50,7 +109,14 @@ class RichText(Element):
     text: str = ""
     """The plain text content."""
 
-    # Future: style runs, fonts, colors, etc.
+    runs: list[TextRun] = field(default_factory=list)
+    """Optional rich-text runs. Empty when formatting is not extracted."""
+
+    font_size_pt: float | None = None
+    """Best-effort paragraph font size in points (when available)."""
+
+    tags: list[NoteTag] = field(default_factory=list)
+    """Note tags associated with this paragraph/text node."""
 
     def __str__(self) -> str:
         return self.text
@@ -77,6 +143,12 @@ class Image(Element):
 
     format: str | None = None
     """Image format (e.g., 'png', 'jpeg')."""
+
+    hyperlink: str | None = None
+    """Hyperlink URL associated with the image (when available)."""
+
+    tags: list[NoteTag] = field(default_factory=list)
+    """Note tags associated with this image."""
 
 
 @dataclass
@@ -149,6 +221,9 @@ class Table(Element):
     rows: list[TableRow] = field(default_factory=list)
     """Rows in the table."""
 
+    tags: list[NoteTag] = field(default_factory=list)
+    """Note tags associated with this table."""
+
     @property
     def row_count(self) -> int:
         """Number of rows in the table."""
@@ -205,6 +280,9 @@ class OutlineElement(Element):
 
     is_numbered: bool = False
     """True if this element is a numbered list item (vs bulleted)."""
+
+    tags: list[NoteTag] = field(default_factory=list)
+    """Note tags associated with this outline element."""
 
     def iter_text(self) -> Iterator[RichText]:
         """Iterate over all RichText elements in contents."""
@@ -315,6 +393,18 @@ class Page(Element):
 
     level: int = 0
     """Page hierarchy level (0 = top-level page, 1+ = subpage)."""
+
+    alternative_title: str | None = None
+    """Alternative/cached title string when present in file metadata."""
+
+    author: str | None = None
+    """Best-effort page author name when available."""
+
+    is_conflict: bool | None = None
+    """True if this page is a conflict page, when known."""
+
+    is_read_only: bool | None = None
+    """True if this page is read-only, when known."""
 
     def iter_children(self) -> Iterator[Element]:
         return iter(self.children)

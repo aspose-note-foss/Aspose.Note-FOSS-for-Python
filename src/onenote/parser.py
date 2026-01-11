@@ -16,12 +16,31 @@ from .elements import (
     Outline,
     OutlineElement,
     RichText,
+    TextRun,
+    TextStyle,
     Image,
     Table,
     TableRow,
     TableCell,
     AttachedFile,
+    NoteTag,
 )
+
+
+def _convert_note_tags(tags: tuple[ms.NoteTag, ...] | None) -> list[NoteTag]:
+    if not tags:
+        return []
+    return [
+        NoteTag(
+            shape=t.shape,
+            label=t.label,
+            text_color=t.text_color,
+            highlight_color=t.highlight_color,
+            created=t.created,
+            completed=t.completed,
+        )
+        for t in tags
+    ]
 
 
 def parse_document(data: bytes | bytearray | memoryview, *, strict: bool = False) -> Document:
@@ -192,14 +211,42 @@ def _convert_outline_element(elem: ms.OutlineElement) -> OutlineElement:
         list_format=list_format,
         list_restart=list_restart,
         is_numbered=is_numbered,
+        tags=_convert_note_tags(getattr(elem, "tags", None)),
     )
 
 
 def _convert_rich_text(rt: ms.RichText) -> RichText:
     """Convert ms_one RichText to public RichText."""
+    runs: list[TextRun] = []
+    for r in getattr(rt, "runs", ()) or ():
+        style = getattr(r, "style", None)
+        runs.append(
+            TextRun(
+                start=int(getattr(r, "start", 0)),
+                end=int(getattr(r, "end", 0)),
+                style=TextStyle(
+                    bold=getattr(style, "bold", None),
+                    italic=getattr(style, "italic", None),
+                    underline=getattr(style, "underline", None),
+                    strikethrough=getattr(style, "strikethrough", None),
+                    superscript=getattr(style, "superscript", None),
+                    subscript=getattr(style, "subscript", None),
+                    font_name=getattr(style, "font_name", None),
+                    font_size_pt=getattr(style, "font_size_pt", None),
+                    font_color=getattr(style, "font_color", None),
+                    highlight_color=getattr(style, "highlight_color", None),
+                    language_id=getattr(style, "language_id", None),
+                    hyperlink=getattr(style, "hyperlink", None),
+                ),
+            )
+        )
+
     return RichText(
         _oid=rt.oid.guid if rt.oid else b"",
         text=rt.text or "",
+        runs=runs,
+        font_size_pt=getattr(rt, "font_size_pt", None),
+        tags=_convert_note_tags(getattr(rt, "tags", None)),
     )
 
 
@@ -210,6 +257,7 @@ def _convert_image(img: ms.Image) -> Image:
         _oid=img.oid.guid if img.oid else b"",
         alt_text=img.alt_text,
         filename=img.original_filename,
+        tags=_convert_note_tags(getattr(img, "tags", None)),
     )
 
 
@@ -223,6 +271,7 @@ def _convert_table(table: ms.Table) -> Table:
     return Table(
         _oid=table.oid.guid if table.oid else b"",
         rows=rows,
+        tags=_convert_note_tags(getattr(table, "tags", None)),
     )
 
 
