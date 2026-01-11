@@ -23,6 +23,9 @@ class PageSeries(BaseNode):
 class Page(BaseNode):
     title: str | None
     children: tuple[BaseNode, ...]
+    # Newest-to-oldest snapshots of this page in previous revisions.
+    # Empty by default; populated by ms_one.reader.parse_section_file_with_page_history.
+    history: tuple["Page", ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
