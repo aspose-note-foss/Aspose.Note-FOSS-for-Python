@@ -15,6 +15,7 @@ from ..compact_id import EffectiveGidTable, resolve_compact_id_array
 from ..object_index import ObjectIndex, ObjectRecord
 from ..property_access import get_bytes, get_oid_array
 from ..spec_ids import (
+    JCID_EMBEDDED_FILE_NODE_INDEX,
     JCID_IMAGE_NODE_INDEX,
     JCID_OUTLINE_ELEMENT_NODE_INDEX,
     JCID_OUTLINE_NODE_INDEX,
@@ -42,6 +43,7 @@ from ..types import decode_text_extended_ascii, decode_wz_in_atom
 
 from .base import BaseNode, UnknownNode
 from .structure import (
+    EmbeddedFile,
     Image,
     Outline,
     OutlineElement,
@@ -444,6 +446,17 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
             jcid_index=jidx,
             raw_properties=rec.properties,
             alt_text=None,
+            original_filename=file_names[0] if file_names else None,
+            file_data_guids=file_data_guids,
+        )
+
+    if jidx == JCID_EMBEDDED_FILE_NODE_INDEX:
+        file_data_guids = _resolve_file_data_store_guids_via_references(rec, state=state)
+        file_names = _resolve_file_names_via_references(rec, state=state)
+        return EmbeddedFile(
+            oid=oid,
+            jcid_index=jidx,
+            raw_properties=rec.properties,
             original_filename=file_names[0] if file_names else None,
             file_data_guids=file_data_guids,
         )
