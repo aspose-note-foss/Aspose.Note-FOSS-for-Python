@@ -12,3 +12,8 @@ if str(SRC) not in sys.path:
 class TestImportsSmoke(unittest.TestCase):
     def test_imports_smoke(self) -> None:
         import onestore  # noqa: F401
+
+        import ms_one  # noqa: F401
+
+        import onenote  # noqa: F401
+        from onenote import Document, Page, Outline, RichText  # noqa: F401

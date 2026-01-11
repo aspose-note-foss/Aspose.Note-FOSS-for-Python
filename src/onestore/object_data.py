@@ -366,11 +366,16 @@ def decode_property_set(
     for prid in prop_set.rg_prids:
         props.append(_decode_one_property(prid, r, cursor, rgdata_start=rgdata_start, ctx=ctx))
 
-    if r.remaining() != 0:
-        msg = "PropertySet rgData was not fully consumed"
-        if ctx.strict:
-            raise OneStoreFormatError(msg, offset=r.tell())
-        ctx.warn(msg, offset=r.tell())
+    rem = int(r.remaining())
+    if rem != 0:
+        # ObjectSpaceObjectPropSet may include 0..7 bytes of zero padding after the PropertySet.
+        # Treat that as acceptable even in strict mode.
+        tail = r.peek_bytes(rem)
+        if not (rem <= 7 and tail == b"\x00" * rem):
+            msg = "PropertySet rgData was not fully consumed"
+            if ctx.strict:
+                raise OneStoreFormatError(msg, offset=r.tell())
+            ctx.warn(msg, offset=r.tell())
 
     # These are not MUST-level invariants, but are useful sanity signals.
     if cursor.i_oid != len(cursor.oids):
@@ -435,36 +440,12 @@ class ObjectSpaceObjectPropSet:
         tail = BinaryReader(reader.read_bytes(reader.remaining()))
         prop = PropertySet.parse_from_tail(tail, ctx=ctx)
 
-        # Split padding heuristically: up to 7 trailing zeros.
-        rg = prop.rg_data
-        pad_len = 0
-        max_scan = min(7, len(rg))
-        for k in range(max_scan, 0, -1):
-            if rg[-k:] == b"\x00" * k:
-                pad_len = k
-                break
-
-        padding = rg[-pad_len:] if pad_len else b""
-        if padding and padding != b"\x00" * len(padding):
-            # Defensive: should never happen due to check above.
-            raise OneStoreFormatError("ObjectSpaceObjectPropSet padding MUST be zero", offset=start)
-
-        if padding and ctx.strict:
-            # Keep strict about MUST=0 padding bytes; our heuristic only extracts zeros.
-            pass
-
-        prop_no_pad = PropertySet(
-            c_properties=prop.c_properties,
-            rg_prids=prop.rg_prids,
-            rg_data=rg[:-pad_len] if pad_len else rg,
-        )
-
         return cls(
             oids=oids,
             osids=osids,
             context_ids=context_ids,
-            property_set=prop_no_pad,
-            padding=padding,
+            property_set=prop,
+            padding=b"",
         )
 
     def decode_property_set(self, *, ctx: ParseContext) -> DecodedPropertySet:
