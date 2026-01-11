@@ -18,6 +18,7 @@ from ..property_access import get_bytes, get_oid, get_oid_array, get_prop
 from ..spec_ids import (
     JCID_EMBEDDED_FILE_NODE_INDEX,
     JCID_IMAGE_NODE_INDEX,
+    JCID_NUMBER_LIST_NODE_INDEX,
     JCID_OUTLINE_ELEMENT_NODE_INDEX,
     JCID_OUTLINE_NODE_INDEX,
     JCID_PAGE_MANIFEST_NODE_INDEX,
@@ -36,6 +37,9 @@ from ..spec_ids import (
     PID_CONTENT_CHILD_NODES,
     PID_ELEMENT_CHILD_NODES,
     PID_FONT_SIZE,
+    PID_LIST_MSAA_INDEX,
+    PID_LIST_NODES,
+    PID_LIST_RESTART,
     PID_NOTE_TAG_COMPLETED,
     PID_NOTE_TAG_CREATED,
     PID_NOTE_TAG_DEFINITION_OID,
@@ -47,6 +51,7 @@ from ..spec_ids import (
     PID_NOTE_TAG_TEXT_COLOR,
     PID_PAGE_SERIES_CHILD_NODES,
     PID_RICH_EDIT_TEXT_UNICODE,
+    PID_NUMBER_LIST_FORMAT,
     PID_SECTION_DISPLAY_NAME,
     PID_TEXT_EXTENDED_ASCII,
     PID_TEXT_RUN_DATA_OBJECT,
@@ -58,6 +63,7 @@ from .base import BaseNode, UnknownNode
 from .structure import (
     EmbeddedFile,
     Image,
+    ListNode,
     NoteTag,
     Outline,
     OutlineElement,
@@ -702,6 +708,11 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
         children = _children_from_pid(rec, PID_ELEMENT_CHILD_NODES, state)
         content_children = _children_from_pid(rec, PID_CONTENT_CHILD_NODES, state)
 
+        # ListNodes (jcidNumberListNode) describe bullet/number markers for this element.
+        # Keep these separate from content_children because they are formatting metadata.
+        list_nodes_raw = _children_from_pid(rec, PID_LIST_NODES, state)
+        list_nodes = tuple(ch for ch in list_nodes_raw if isinstance(ch, ListNode))
+
         tags = _extract_note_tags_from_properties(rec.properties, state=state)
 
         # Append embedded objects referenced from RichText runs.
@@ -741,7 +752,25 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
             raw_properties=rec.properties,
             children=children,
             content_children=content_children,
+            list_nodes=list_nodes,
             tags=tags,
+        )
+
+    if jidx == JCID_NUMBER_LIST_NODE_INDEX:
+        number_list_format = _wz_prop(rec, PID_NUMBER_LIST_FORMAT, state)
+        restart = None
+        msaa_index = None
+        if rec.properties is not None:
+            restart = _u32_from_bytes(get_bytes(rec.properties, PID_LIST_RESTART))
+            msaa_index = _u16_from_bytes(get_bytes(rec.properties, PID_LIST_MSAA_INDEX))
+
+        return ListNode(
+            oid=oid,
+            jcid_index=jidx,
+            raw_properties=rec.properties,
+            number_list_format=number_list_format,
+            restart=restart,
+            msaa_index=msaa_index,
         )
 
     if jidx == JCID_PAGE_MANIFEST_NODE_INDEX:

@@ -174,10 +174,24 @@ def _convert_outline_element(elem: ms.OutlineElement) -> OutlineElement:
         if converted is not None:
             contents.append(converted)
 
+    list_format = None
+    list_restart = None
+    is_numbered = False
+    # MS-ONE represents list markers as jcidNumberListNode entries attached to OutlineElement.
+    # Keep this simple in the public API: use the first marker when multiple are present.
+    if getattr(elem, "list_nodes", None):
+        ln = elem.list_nodes[0]
+        list_format = getattr(ln, "number_list_format", None)
+        list_restart = getattr(ln, "restart", None)
+        is_numbered = bool(getattr(ln, "is_numbered", False))
+
     return OutlineElement(
         _oid=elem.oid.guid if elem.oid else b"",
         children=children,
         contents=contents,
+        list_format=list_format,
+        list_restart=list_restart,
+        is_numbered=is_numbered,
     )
 
 

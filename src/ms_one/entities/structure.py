@@ -42,8 +42,30 @@ class Outline(BaseNode):
 class OutlineElement(BaseNode):
     children: tuple[BaseNode, ...]
     content_children: tuple[BaseNode, ...]
+    # Zero or more list item nodes (jcidNumberListNode) associated with this outline element.
+    # Typically 0 or 1; present for both bulleted and numbered lists.
+    list_nodes: tuple["ListNode", ...] = ()
     # Zero or more note tags associated with this outline element (container).
     tags: tuple["NoteTag", ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ListNode(BaseNode):
+    """A list marker definition for an outline element (bullet or number).
+
+    Backed by MS-ONE jcidNumberListNode.
+    """
+
+    number_list_format: str | None
+    # Explicit number for this item (overrides automatic numbering) when present.
+    restart: int | None = None
+    # Accessibility string index for the list item, when present.
+    msaa_index: int | None = None
+
+    @property
+    def is_numbered(self) -> bool:
+        # MS-ONE: numbered list if NumberListFormat contains U+FFFD.
+        return bool(self.number_list_format and "\uFFFD" in self.number_list_format)
 
 
 @dataclass(frozen=True, slots=True)

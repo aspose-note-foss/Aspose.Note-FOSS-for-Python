@@ -193,6 +193,19 @@ class OutlineElement(Element):
     indent_level: int = 0
     """Indentation level (0 = top level)."""
 
+    list_format: str | None = None
+    """List marker format for this element, when it is part of a list.
+
+    For numbered lists this typically contains the replacement character (U+FFFD)
+    which OneNote replaces with the item number.
+    """
+
+    list_restart: int | None = None
+    """Explicit number override for this list item, when present."""
+
+    is_numbered: bool = False
+    """True if this element is a numbered list item (vs bulleted)."""
+
     def iter_text(self) -> Iterator[RichText]:
         """Iterate over all RichText elements in contents."""
         for elem in self.contents:

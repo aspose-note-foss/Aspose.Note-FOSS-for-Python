@@ -134,6 +134,9 @@ for elem in outline.iter_elements():
     elem.children       # List[Element] - nested elements (for lists)
     elem.contents       # List[Element] - actual content
     elem.indent_level   # int - indentation level
+    elem.is_numbered    # bool - numbered list item?
+    elem.list_format    # str | None - list marker format (best-effort)
+    elem.list_restart   # int | None - explicit number override, when present
     elem.text           # str - text content
 
     # Iteration
