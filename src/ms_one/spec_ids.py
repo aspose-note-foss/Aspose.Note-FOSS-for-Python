@@ -43,8 +43,29 @@ PID_CACHED_TITLE_STRING_FROM_PAGE = 0x1C001D3C  # WzInAtom
 
 PID_RICH_EDIT_TEXT_UNICODE = 0x1C001C22  # RichEditTextUnicode -> WzInAtom
 
+# Text formatting / paragraph styles
+PID_TEXT_RUN_FORMATTING = 0x24001E13  # TextRunFormatting (OID array)
+PID_FONT_SIZE = 0x10001C0B  # FontSize (u16 half-points)
+
+# Embedded objects inside RichText runs
+PID_TEXT_RUN_DATA_OBJECT = 0x24003458  # TextRunDataObject (OID array)
+
 # Alternate text storage observed in SimpleTable.one
 PID_TEXT_EXTENDED_ASCII = 0x1C003498  # TextExtendedAscii (non-null-terminated bytes)
+
+# Note tags
+PID_NOTE_TAG_SHAPE = 0x10003464
+PID_NOTE_TAG_HIGHLIGHT_COLOR = 0x14003465
+PID_NOTE_TAG_TEXT_COLOR = 0x14003466
+PID_NOTE_TAG_LABEL = 0x1C003468  # WzInAtom
+PID_NOTE_TAG_CREATED = 0x1400346E
+PID_NOTE_TAG_COMPLETED = 0x1400346F
+PID_NOTE_TAG_DEFINITION_OID = 0x20003488
+
+# NoteTagStates shows up as prtArrayOfPropertyValues in the decoder, which encodes a different
+# high-byte than the spec's base value (observed: 0x40003489). Accept both.
+PID_NOTE_TAG_STATES = 0x40003489
+PID_NOTE_TAG_STATES_ALT = 0x04003489
 
 # Misc useful properties (not all used in v1)
 PID_AUTHOR = 0x1C001D75

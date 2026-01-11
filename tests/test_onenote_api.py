@@ -166,24 +166,13 @@ class TestTableContent(unittest.TestCase):
         self.assertEqual((table.row_count, table.column_count), (4, 3))
 
         grid = [[cell.text for cell in row.cells] for row in table.rows]
-        self.assertEqual(
-            grid,
-            [
-                ["1", "22", "3"],
-                ["6", "5", "4"],
-                ["7", "8", "9"],
-                ["b", "a", "0"],
-            ],
-        )
-
-    def test_simpletable_contains_table(self) -> None:
-        """SimpleTable.one fixture should expose at least one Table."""
-        found = False
-        for page in self.doc.pages:
-            if any(True for _ in page.iter_tables()):
-                found = True
-                break
-        self.assertTrue(found)
+        expected = [
+            ["1", "22", "3"],
+            ["6", "5", "4"],
+            ["7", "8", "9"],
+            ["b", "a", "0"],
+        ]
+        self.assertEqual(grid, expected)
 
 
 class TestFindPages(unittest.TestCase):

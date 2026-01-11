@@ -45,42 +45,46 @@ def _resolve_reference_values(
         return props
 
     # DecodedPropertySet is frozen; rebuild deterministically.
-    from onestore.object_data import DecodedProperty
+    from onestore.object_data import DecodedProperty, DecodedPropertySet as _DPS
+
+    def _resolve_value(v):
+        t2 = type(v)
+
+        # Direct reference values.
+        if isinstance(v, CompactID):
+            return _os._resolve_compact_id_to_extended_guid(v, gid_table, ctx=ctx, offset=None)
+
+        # Reference arrays.
+        if isinstance(v, tuple) and v and isinstance(v[0], CompactID):
+            return tuple(_os._resolve_compact_id_to_extended_guid(x, gid_table, ctx=ctx, offset=None) for x in v)
+
+        # Nested PropertySet.
+        if isinstance(v, _DPS):
+            return _resolve_reference_values(v, gid_table, ctx=ctx)
+
+        # Array of nested PropertySet(s).
+        if isinstance(v, tuple) and v and isinstance(v[0], _DPS):
+            return tuple(_resolve_reference_values(x, gid_table, ctx=ctx) for x in v)
+
+        return v
 
     out: list[DecodedProperty] = []
     for p in props.properties:
         t = int(p.prid.prop_type)
         v = p.value
-        if t == 0x08 and isinstance(v, CompactID):
-            v2 = _os._resolve_compact_id_to_extended_guid(v, gid_table, ctx=ctx, offset=None)
-            out.append(DecodedProperty(prid=p.prid, value=v2, rgdata_offset=p.rgdata_offset, rgdata_length=p.rgdata_length))
+        # Fast-path common cases to keep behavior stable.
+        if t == 0x09 and isinstance(v, tuple) and not v:
+            out.append(DecodedProperty(prid=p.prid, value=tuple(), rgdata_offset=p.rgdata_offset, rgdata_length=p.rgdata_length))
             continue
-        if t == 0x09 and isinstance(v, tuple):
-            # OID array (possibly empty)
-            if v and isinstance(v[0], CompactID):
-                v2 = tuple(_os._resolve_compact_id_to_extended_guid(x, gid_table, ctx=ctx, offset=None) for x in v)
-                out.append(
-                    DecodedProperty(prid=p.prid, value=v2, rgdata_offset=p.rgdata_offset, rgdata_length=p.rgdata_length)
-                )
-                continue
-            if not v:
-                out.append(DecodedProperty(prid=p.prid, value=tuple(), rgdata_offset=p.rgdata_offset, rgdata_length=p.rgdata_length))
-                continue
+        if t in (0x0B, 0x0D) and isinstance(v, tuple) and not v:
+            out.append(DecodedProperty(prid=p.prid, value=tuple(), rgdata_offset=p.rgdata_offset, rgdata_length=p.rgdata_length))
+            continue
 
-        # Some MS-ONE properties store reference-like arrays using other PropertyID types.
-        # Examples:
-        # - 0x0B: ObjectSpaceID array (ChildGraphSpaceElementNodes)
-        # - 0x0D: context-related arrays (e.g. VersionHistoryGraphSpaceContextNodes)
-        if t in (0x0B, 0x0D) and isinstance(v, tuple):
-            if v and isinstance(v[0], CompactID):
-                v2 = tuple(_os._resolve_compact_id_to_extended_guid(x, gid_table, ctx=ctx, offset=None) for x in v)
-                out.append(DecodedProperty(prid=p.prid, value=v2, rgdata_offset=p.rgdata_offset, rgdata_length=p.rgdata_length))
-                continue
-            if not v:
-                out.append(DecodedProperty(prid=p.prid, value=tuple(), rgdata_offset=p.rgdata_offset, rgdata_length=p.rgdata_length))
-                continue
-
-        out.append(p)
+        v2 = _resolve_value(v)
+        if v2 is not v:
+            out.append(DecodedProperty(prid=p.prid, value=v2, rgdata_offset=p.rgdata_offset, rgdata_length=p.rgdata_length))
+        else:
+            out.append(p)
 
     return DecodedPropertySet(
         c_properties=props.c_properties,

@@ -16,8 +16,13 @@ from .property_access import get_oid_array
 from .spec_ids import (
     JCID_PAGE_MANIFEST_NODE_INDEX,
     JCID_PAGE_NODE_INDEX,
+    JCID_IMAGE_NODE_INDEX,
+    JCID_TABLE_NODE_INDEX,
+    JCID_EMBEDDED_FILE_NODE_INDEX,
     JCID_SECTION_NODE_INDEX,
     PID_CHILD_GRAPH_SPACE_ELEMENT_NODES,
+    PID_NOTE_TAG_STATES,
+    PID_NOTE_TAG_STATES_ALT,
 )
 from .entities.parsers import ParseState, parse_node
 from .entities.base import BaseNode
@@ -31,20 +36,72 @@ def _pick_default_revision_index(step10_os) -> int:
     if not step10_os.revisions:
         raise MSOneFormatError("No revisions found in object space")
 
-    rev_index = len(step10_os.revisions) - 1
-    target_rid: ExtendedGUID | None = None
-    for pair, rid in getattr(step10_os, "role_assignments", ()):
-        if pair.gctxid == DEFAULT_CONTEXT_GCTXID and int(pair.revision_role) == 1:
-            target_rid = rid
-            break
+    last_index = len(step10_os.revisions) - 1
+    index_by_rid = {rev.rid: i for i, rev in enumerate(step10_os.revisions)}
 
-    if target_rid is not None:
-        for i, rev in enumerate(step10_os.revisions):
-            if rev.rid == target_rid:
-                rev_index = i
+    def _advance_contiguous_descendants_matching_pair(
+        start_index: int,
+        *,
+        gctxid: ExtendedGUID,
+        revision_role: int,
+    ) -> int:
+        """Advance along a contiguous ridDependent chain to the newest matching revision.
+
+        Some files contain RevisionRoleContextPair assignments that point to a revision whose
+        own (gctxid, revision_role) metadata does not match the assignment key, yet the file
+        appends a *contiguous* sequence of dependent revisions (in revision-list order) that
+        does match. We only follow such linear, in-order chains; this avoids jumping across
+        interleaved revisions from other contexts/roles.
+        """
+
+        best_match: int | None = None
+        cur = int(start_index)
+
+        while cur < len(step10_os.revisions):
+            rev = step10_os.revisions[cur]
+            if rev.gctxid == gctxid and int(rev.revision_role) == int(revision_role):
+                best_match = cur
+
+            nxt = cur + 1
+            if nxt >= len(step10_os.revisions):
                 break
 
-    return rev_index
+            nxt_rev = step10_os.revisions[nxt]
+            if nxt_rev.rid_dependent != rev.rid:
+                break
+
+            cur = nxt
+
+        return int(best_match if best_match is not None else start_index)
+
+    # Standard: select via RevisionRoleContextPair assignments.
+    # Prefer the highest revision_role assignment in DEFAULT_CONTEXT.
+    candidates: list[tuple[int, int]] = []  # (revision_role, revision_index)
+    for pair, rid in getattr(step10_os, "role_assignments", ()):
+        if pair.gctxid != DEFAULT_CONTEXT_GCTXID:
+            continue
+        idx = index_by_rid.get(rid)
+        if idx is None:
+            continue
+        candidates.append((int(pair.revision_role), int(idx)))
+
+    if candidates:
+        # Highest role wins; if equal role, pick the newest revision index.
+        role, idx = max(candidates, key=lambda x: (x[0], x[1]))
+
+        assigned_rev = step10_os.revisions[int(idx)]
+        if assigned_rev.gctxid == DEFAULT_CONTEXT_GCTXID and int(assigned_rev.revision_role) == int(role):
+            return int(idx)
+
+        # If the assignment points at a revision with mismatching metadata, try to recover by
+        # walking only a contiguous in-order dependency chain.
+        return _advance_contiguous_descendants_matching_pair(
+            int(idx),
+            gctxid=DEFAULT_CONTEXT_GCTXID,
+            revision_role=int(role),
+        )
+
+    return last_index
 
 
 def _build_dependency_chain_indices(step10_os, start_index: int) -> list[int]:
@@ -191,51 +248,120 @@ def _extract_pages_from_page_object_space(
     ctx: ParseContext,
     file_data_store_index=None,
     rev_index: int | None = None,
+
 ) -> list[Page]:
-    idx, gid_table, roots = _build_effective_object_index_for_object_space(
-        data,
-        step10_os=step10_os,
-        step11_os=step11_os,
-        last_count_by_list_id=last_count_by_list_id,
-        ctx=ctx,
-        rev_index=rev_index,
-    )
+    def _extract_pages_for_revision(ri: int | None) -> list[Page]:
+        idx, gid_table, roots = _build_effective_object_index_for_object_space(
+            data,
+            step10_os=step10_os,
+            step11_os=step11_os,
+            last_count_by_list_id=last_count_by_list_id,
+            ctx=ctx,
+            rev_index=ri,
+        )
 
-    state = ParseState(index=idx, gid_table=gid_table, ctx=ctx, file_data_store_index=file_data_store_index)
+        state = ParseState(index=idx, gid_table=gid_table, ctx=ctx, file_data_store_index=file_data_store_index)
 
-    # Many files do not expose PageManifest/PageNode as roots of the page object space.
-    # Instead of relying on roots (which may be other container types), scan the object
-    # index for the actual content-bearing nodes.
-    manifest_oids: list[ExtendedGUID] = []
-    page_oids: list[ExtendedGUID] = []
-    for oid, rec in idx.objects_by_oid.items():
-        if rec.jcid is None:
-            continue
-        jidx = int(rec.jcid.index)
-        if jidx == JCID_PAGE_MANIFEST_NODE_INDEX:
-            manifest_oids.append(oid)
-        elif jidx == JCID_PAGE_NODE_INDEX:
-            page_oids.append(oid)
+        # Many files do not expose PageManifest/PageNode as roots of the page object space.
+        # Instead of relying on roots (which may be other container types), scan the object
+        # index for the actual content-bearing nodes.
+        manifest_oids: list[ExtendedGUID] = []
+        page_oids: list[ExtendedGUID] = []
+        for oid, rec in idx.objects_by_oid.items():
+            if rec.jcid is None:
+                continue
+            jidx = int(rec.jcid.index)
+            if jidx == JCID_PAGE_MANIFEST_NODE_INDEX:
+                manifest_oids.append(oid)
+            elif jidx == JCID_PAGE_NODE_INDEX:
+                page_oids.append(oid)
 
-    root_nodes: list[object] = []
-    if manifest_oids:
-        root_nodes = [parse_node(oid, state) for oid in manifest_oids]
-    elif page_oids:
-        root_nodes = [parse_node(oid, state) for oid in page_oids]
-    elif roots:
-        # Last resort: try parsing the first effective root.
-        root_nodes = [parse_node(roots[0][1], state)]
+        # Collect pages from PageManifest roots when present.
+        pages: list[Page] = []
+        for oid in manifest_oids:
+            root = parse_node(oid, state)
+            if isinstance(root, PageManifest):
+                for n in root.content_children:
+                    if isinstance(n, Page):
+                        pages.append(n)
 
-    pages: list[Page] = []
-    for root_node in root_nodes:
-        if isinstance(root_node, PageManifest):
-            for n in root_node.content_children:
-                if isinstance(n, Page):
-                    pages.append(n)
-        elif isinstance(root_node, Page):
-            pages.append(root_node)
+        # Also include directly present Page nodes. Some files appear to have multiple page roots
+        # and not all content is reachable via the chosen PageManifest path.
+        for oid in page_oids:
+            n = parse_node(oid, state)
+            if isinstance(n, Page):
+                pages.append(n)
 
-    return pages
+        if not pages and roots:
+            # Last resort: try parsing the first effective root.
+            n = parse_node(roots[0][1], state)
+            if isinstance(n, PageManifest):
+                for ch in n.content_children:
+                    if isinstance(ch, Page):
+                        pages.append(ch)
+            elif isinstance(n, Page):
+                pages.append(n)
+
+        # Deduplicate by OID while preserving order.
+        out: list[Page] = []
+        seen: set[ExtendedGUID] = set()
+        for p in pages:
+            if p.oid in seen:
+                continue
+            seen.add(p.oid)
+            out.append(p)
+
+        # Best-effort: some files contain tagged objects that exist in the effective
+        # object index but are not reachable from any parsed page roots.
+        # Expose them by attaching to the first page.
+        if out:
+            reachable: set[ExtendedGUID] = set()
+            for page in out:
+                for n in _iter_entity_nodes(page):
+                    if isinstance(n, BaseNode):
+                        reachable.add(n.oid)
+
+            orphan_tagged: list[BaseNode] = []
+            for oid, rec in idx.objects_by_oid.items():
+                if oid in reachable or rec.jcid is None or rec.properties is None:
+                    continue
+
+                jidx = int(rec.jcid.index)
+                if jidx not in (JCID_IMAGE_NODE_INDEX, JCID_TABLE_NODE_INDEX, JCID_EMBEDDED_FILE_NODE_INDEX):
+                    continue
+
+                has_tag = any(
+                    int(p.prid.raw) in (PID_NOTE_TAG_STATES, PID_NOTE_TAG_STATES_ALT)
+                    for p in rec.properties.properties
+                )
+                if not has_tag:
+                    continue
+
+                orphan_tagged.append(parse_node(oid, state))
+
+            if orphan_tagged:
+                p0 = out[0]
+                out[0] = Page(
+                    oid=p0.oid,
+                    jcid_index=p0.jcid_index,
+                    raw_properties=p0.raw_properties,
+                    title=p0.title,
+                    children=tuple(list(p0.children) + orphan_tagged),
+                    history=p0.history,
+                )
+
+        return out
+
+    # If the caller pins a revision, honor it.
+    if rev_index is not None:
+        return _extract_pages_for_revision(rev_index)
+
+    # Standard behavior: use the revision assigned to the default context.
+    # If there are no revisions (unexpected), fall back to building without a pinned revision.
+    if not getattr(step10_os, "revisions", None):
+        return _extract_pages_for_revision(None)
+
+    return _extract_pages_for_revision(_pick_default_revision_index(step10_os))
 
 
 def parse_section_file(
