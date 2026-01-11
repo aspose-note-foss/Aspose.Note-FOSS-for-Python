@@ -9,6 +9,9 @@ __pycache__/
 coverage.xml
 htmlcov/
 
+# Generated test artifacts
+tests/out/
+
 # Virtual environments
 .venv/
 venv/

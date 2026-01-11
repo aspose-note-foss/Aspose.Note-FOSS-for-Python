@@ -128,8 +128,23 @@ def _convert_outline(outline: ms.Outline) -> Outline:
     """Convert ms_one Outline to public Outline."""
     children: list[OutlineElement] = []
     for child in outline.children:
-        if isinstance(child, ms.OutlineElement):
-            children.append(_convert_outline_element(child))
+        converted = _convert_node(child)
+        if converted is None:
+            continue
+
+        if isinstance(converted, OutlineElement):
+            children.append(converted)
+        else:
+            # Some files place content nodes directly under an Outline.
+            # Wrap them into a synthetic OutlineElement so the public API
+            # can still surface them via iter_text/page.text.
+            children.append(
+                OutlineElement(
+                    _oid=b"",
+                    children=[],
+                    contents=[converted],
+                )
+            )
 
     return Outline(
         _oid=outline.oid.guid if outline.oid else b"",
@@ -141,12 +156,19 @@ def _convert_outline_element(elem: ms.OutlineElement) -> OutlineElement:
     """Convert ms_one OutlineElement to public OutlineElement."""
     # children are nested OutlineElements (hierarchical structure)
     children: list[Element] = []
+    contents: list[Element] = []
     for child in elem.children:
-        if isinstance(child, ms.OutlineElement):
-            children.append(_convert_outline_element(child))
+        converted = _convert_node(child)
+        if converted is None:
+            continue
+        if isinstance(converted, OutlineElement):
+            children.append(converted)
+        else:
+            # Some real-world files place content nodes under ElementChildNodes;
+            # keep them instead of dropping.
+            contents.append(converted)
 
     # content_children are the actual content (RichText, Image, Table, etc.)
-    contents: list[Element] = []
     for content in elem.content_children:
         converted = _convert_node(content)
         if converted is not None:
@@ -173,6 +195,7 @@ def _convert_image(img: ms.Image) -> Image:
     return Image(
         _oid=img.oid.guid if img.oid else b"",
         alt_text=img.alt_text,
+        filename=img.original_filename,
     )
 
 

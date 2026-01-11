@@ -14,7 +14,7 @@ from onenote import Document, Element, Page, Outline, OutlineElement, RichText, 
 
 
 def _simpletable_path() -> Path | None:
-    p = ROOT / "SimpleTable.one"
+    p = ROOT / "testfiles" / "SimpleTable.one"
     return p if p.exists() else None
 
 

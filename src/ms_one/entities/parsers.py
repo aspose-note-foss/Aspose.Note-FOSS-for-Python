@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+import uuid
+from pathlib import PurePath
 from typing import cast
 
 from onestore.common_types import CompactID, ExtendedGUID
+from onestore.file_data import parse_file_data_reference
 from onestore.parse_context import ParseContext
+from onestore.chunk_refs import FileNodeChunkReference
 
 from ..compact_id import EffectiveGidTable, resolve_compact_id_array
 from ..object_index import ObjectIndex, ObjectRecord
@@ -54,11 +59,288 @@ from .structure import (
 )
 
 
+_IFNDF_GUID_RE = re.compile(r"<ifndf>\{(?P<guid>[0-9a-fA-F\-]{36})\}</ifndf>")
+
+
+def _iter_property_bytes(value) -> "list[bytes]":
+    out: list[bytes] = []
+    stack = [value]
+    while stack:
+        cur = stack.pop()
+        if cur is None:
+            continue
+        if isinstance(cur, bytes):
+            out.append(cur)
+            continue
+        if isinstance(cur, tuple):
+            stack.extend(list(cur))
+            continue
+        # DecodedPropertySet
+        if hasattr(cur, "properties"):
+            try:
+                stack.extend([p.value for p in cur.properties])
+            except Exception:
+                pass
+    return out
+
+
+def _iter_property_scalars(value):
+    """Yield all scalar values inside a DecodedPropertySet/tuple tree."""
+
+    stack = [value]
+    while stack:
+        cur = stack.pop()
+        if cur is None:
+            continue
+        if isinstance(cur, tuple):
+            stack.extend(list(cur))
+            continue
+        if hasattr(cur, "properties"):
+            try:
+                stack.extend([p.value for p in cur.properties])
+            except Exception:
+                pass
+            continue
+        yield cur
+
+
+def _extract_ifndf_guids_from_properties(props) -> tuple[str, ...]:
+    if props is None:
+        return ()
+
+    found: set[str] = set()
+    for b in _iter_property_bytes(props):
+        # ASCII scan
+        if b"<ifndf>" in b:
+            try:
+                s = b.decode("ascii", errors="ignore")
+            except Exception:
+                s = ""
+            for m in _IFNDF_GUID_RE.finditer(s):
+                try:
+                    found.add(str(uuid.UUID(m.group("guid"))))
+                except Exception:
+                    continue
+
+        # UTF-16LE scan
+        if b"<\x00i\x00f\x00n\x00d\x00f\x00" in b:
+            s = b.decode("utf-16le", errors="ignore")
+            for m in _IFNDF_GUID_RE.finditer(s):
+                try:
+                    found.add(str(uuid.UUID(m.group("guid"))))
+                except Exception:
+                    continue
+
+    return tuple(sorted(found))
+
+
+def _extract_file_data_store_guids_from_properties(
+    props,
+    *,
+    file_data_store_index: dict[bytes, FileNodeChunkReference] | None,
+) -> tuple[str, ...]:
+    """Extract FileDataStore GUIDs from properties.
+
+    - Prefer explicit `<ifndf>{GUID}</ifndf>` strings.
+    - If a FileDataStore index is available, also match raw 16-byte GUID values
+      against known GUID keys to avoid false positives.
+    """
+
+    explicit = set(_extract_ifndf_guids_from_properties(props))
+    if props is None or file_data_store_index is None:
+        return tuple(sorted(explicit))
+
+    keys = set(file_data_store_index.keys())
+    matched: set[str] = set(explicit)
+    for b in _iter_property_bytes(props):
+        if len(b) < 16:
+            continue
+        for i in range(0, len(b) - 15):
+            chunk = b[i : i + 16]
+            if chunk in keys:
+                try:
+                    matched.add(str(uuid.UUID(bytes_le=bytes(chunk))))
+                except Exception:
+                    continue
+
+    return tuple(sorted(matched))
+
+
+def _resolve_file_data_store_guids_via_references(
+    record: ObjectRecord,
+    *,
+    state: "ParseState",
+    max_depth: int = 4,
+    max_nodes: int = 200,
+) -> tuple[str, ...]:
+    """Best-effort resolver for Image file-data GUIDs.
+
+    Some files don't keep the `<ifndf>` reference on the Image node itself.
+    In that case, follow ExtendedGUID references to reachable objects and scan
+    their properties for FileDataStore GUIDs.
+    """
+
+    # Always include anything we can extract locally.
+    local = set(
+        _extract_file_data_store_guids_from_properties(
+            record.properties,
+            file_data_store_index=state.file_data_store_index,
+        )
+    )
+    if local:
+        return tuple(sorted(local))
+
+    if state.file_data_store_index is None:
+        return ()
+
+    visited: set[ExtendedGUID] = set()
+    queue: list[tuple[ExtendedGUID, int]] = []
+
+    # Seed with any ExtendedGUID references directly on the Image node.
+    if record.properties is not None:
+        for v in _iter_property_scalars(record.properties):
+            if isinstance(v, ExtendedGUID):
+                queue.append((v, 1))
+
+    found: set[str] = set(local)
+    steps = 0
+    while queue and steps < max_nodes:
+        steps += 1
+        oid, depth = queue.pop(0)
+        if oid in visited:
+            continue
+        visited.add(oid)
+
+        rec = state.index.get(oid)
+        if rec is None or rec.properties is None:
+            continue
+
+        found.update(
+            _extract_file_data_store_guids_from_properties(
+                rec.properties,
+                file_data_store_index=state.file_data_store_index,
+            )
+        )
+
+        if depth >= max_depth:
+            continue
+
+        for v in _iter_property_scalars(rec.properties):
+            if isinstance(v, ExtendedGUID) and v not in visited:
+                queue.append((v, depth + 1))
+
+    return tuple(sorted(found))
+
+
+_FILE_REF_ASCII_RE = re.compile(rb"<file>[^<\r\n]{1,4096}")
+_FILE_REF_TEXT_RE = re.compile(r"<file>[^<\r\n]{1,4096}")
+_IMAGE_FILENAME_TEXT_RE = re.compile(r"(?i)(?:^|[^A-Za-z0-9_.-])(?P<name>[A-Za-z0-9][A-Za-z0-9 _()\-\.]{0,254}\.(?:png|jpe?g|gif|bmp|tiff?))(?:$|[^A-Za-z0-9_.-])")
+
+
+def _extract_file_names_from_properties(props) -> tuple[str, ...]:
+    """Extract original file names from `<file>...` references in properties.
+
+    References can appear as ASCII/UTF-8 bytes or as UTF-16LE strings.
+    """
+
+    if props is None:
+        return ()
+
+    found: set[str] = set()
+    for b in _iter_property_bytes(props):
+        # ASCII/UTF-8 scan
+        if b"<file>" in b:
+            for m in _FILE_REF_ASCII_RE.finditer(b):
+                try:
+                    s = m.group(0).decode("utf-8", errors="ignore")
+                except Exception:
+                    continue
+                parsed = parse_file_data_reference(s)
+                if parsed.kind == "file" and parsed.file_name:
+                    found.add(parsed.file_name.strip())
+
+        # UTF-16LE scan
+        if b"<\x00f\x00i\x00l\x00e\x00>\x00" in b:
+            s = b.decode("utf-16le", errors="ignore")
+            for m in _FILE_REF_TEXT_RE.finditer(s):
+                parsed = parse_file_data_reference(m.group(0))
+                if parsed.kind == "file" and parsed.file_name:
+                    found.add(parsed.file_name.strip())
+
+        # Standalone filename scan (common for embedded images like 'Tulips.jpg').
+        s16 = b.decode("utf-16le", errors="ignore")
+        for m in _IMAGE_FILENAME_TEXT_RE.finditer(s16):
+            found.add(m.group("name").strip())
+
+        s8 = b.decode("utf-8", errors="ignore")
+        for m in _IMAGE_FILENAME_TEXT_RE.finditer(s8):
+            found.add(m.group("name").strip())
+
+    # Normalize to basename when a full path is stored.
+    normalized: set[str] = set()
+    for name in found:
+        base = PurePath(name).name
+        normalized.add(base or name)
+
+    return tuple(sorted(n for n in normalized if n))
+
+
+def _resolve_file_names_via_references(
+    record: ObjectRecord,
+    *,
+    state: "ParseState",
+    max_depth: int = 4,
+    max_nodes: int = 200,
+) -> tuple[str, ...]:
+    """Best-effort resolver for `<file>...` names.
+
+    Some files store the `<file>` reference on an object reachable via
+    ExtendedGUID references rather than on the Image node itself.
+    """
+
+    local = set(_extract_file_names_from_properties(record.properties))
+    if local:
+        return tuple(sorted(local))
+
+    visited: set[ExtendedGUID] = set()
+    queue: list[tuple[ExtendedGUID, int]] = []
+
+    if record.properties is not None:
+        for v in _iter_property_scalars(record.properties):
+            if isinstance(v, ExtendedGUID):
+                queue.append((v, 1))
+
+    found: set[str] = set(local)
+    steps = 0
+    while queue and steps < max_nodes:
+        steps += 1
+        oid, depth = queue.pop(0)
+        if oid in visited:
+            continue
+        visited.add(oid)
+
+        rec = state.index.get(oid)
+        if rec is None or rec.properties is None:
+            continue
+
+        found.update(_extract_file_names_from_properties(rec.properties))
+
+        if depth >= max_depth:
+            continue
+
+        for v in _iter_property_scalars(rec.properties):
+            if isinstance(v, ExtendedGUID) and v not in visited:
+                queue.append((v, depth + 1))
+
+    return tuple(sorted(found))
+
+
 @dataclass(frozen=True, slots=True)
 class ParseState:
     index: ObjectIndex
     gid_table: EffectiveGidTable | None
     ctx: ParseContext
+    file_data_store_index: dict[bytes, FileNodeChunkReference] | None = None
 
 
 def _children_from_pid(record: ObjectRecord, pid_raw: int, state: ParseState) -> tuple[BaseNode, ...]:
@@ -155,7 +437,16 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
 
     if jidx == JCID_IMAGE_NODE_INDEX:
         # Alt text PID_IMAGE_ALT_TEXT exists in spec but not added to spec_ids v1.
-        return Image(oid=oid, jcid_index=jidx, raw_properties=rec.properties, alt_text=None)
+        file_data_guids = _resolve_file_data_store_guids_via_references(rec, state=state)
+        file_names = _resolve_file_names_via_references(rec, state=state)
+        return Image(
+            oid=oid,
+            jcid_index=jidx,
+            raw_properties=rec.properties,
+            alt_text=None,
+            original_filename=file_names[0] if file_names else None,
+            file_data_guids=file_data_guids,
+        )
 
     if jidx == JCID_TABLE_NODE_INDEX:
         children = _children_from_pid(rec, PID_ELEMENT_CHILD_NODES, state)

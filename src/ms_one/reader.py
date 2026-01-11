@@ -4,6 +4,7 @@ from onestore.common_types import CompactID, ExtendedGUID
 from onestore.header import Header
 from onestore.io import BinaryReader
 from onestore.file_node_types import DEFAULT_CONTEXT_GCTXID
+from onestore.file_data import parse_file_data_store_index
 from onestore.object_space import parse_object_spaces_with_resolved_ids, parse_object_spaces_with_revisions
 from onestore.parse_context import ParseContext
 from onestore.txn_log import parse_transaction_log
@@ -149,6 +150,7 @@ def _extract_pages_from_page_object_space(
     step11_os,
     last_count_by_list_id: dict[int, int],
     ctx: ParseContext,
+    file_data_store_index=None,
 ) -> list[Page]:
     idx, gid_table, roots = _build_effective_object_index_for_object_space(
         data,
@@ -158,7 +160,7 @@ def _extract_pages_from_page_object_space(
         ctx=ctx,
     )
 
-    state = ParseState(index=idx, gid_table=gid_table, ctx=ctx)
+    state = ParseState(index=idx, gid_table=gid_table, ctx=ctx, file_data_store_index=file_data_store_index)
 
     # Many files do not expose PageManifest/PageNode as roots of the page object space.
     # Instead of relying on roots (which may be other container types), scan the object
@@ -204,6 +206,14 @@ def parse_section_file(
 
     ctx = ParseContext(strict=bool(strict), file_size=len(data))
 
+    # Best-effort FileDataStore index. Some fixtures violate MUST-level constraints in this area,
+    # so always parse it in non-strict mode and never let it break section parsing.
+    fds_ctx = ParseContext(strict=False, file_size=len(data))
+    try:
+        file_data_store_index = parse_file_data_store_index(data, ctx=fds_ctx)
+    except Exception:
+        file_data_store_index = {}
+
     step10 = parse_object_spaces_with_revisions(data, ctx=ctx)
     step11 = parse_object_spaces_with_resolved_ids(data, ctx=ctx)
 
@@ -245,7 +255,7 @@ def parse_section_file(
         # Fallback: take the first root and try to parse it.
         section_oid = roots[0][1]
 
-    state = ParseState(index=obj_index, gid_table=gid_table, ctx=ctx)
+    state = ParseState(index=obj_index, gid_table=gid_table, ctx=ctx, file_data_store_index=file_data_store_index)
     node = parse_node(section_oid, state)
 
     if not isinstance(node, Section):
@@ -296,6 +306,7 @@ def parse_section_file(
                     step11_os=step11.object_spaces[os_i],
                     last_count_by_list_id=last_count_by_list_id,
                     ctx=ctx,
+                        file_data_store_index=file_data_store_index,
                 )
             )
 

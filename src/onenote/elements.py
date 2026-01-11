@@ -63,6 +63,9 @@ class Image(Element):
     alt_text: str | None = None
     """Alternative text description for the image."""
 
+    filename: str | None = None
+    """Original source filename for the image (if available)."""
+
     data: bytes = field(default=b"", repr=False)
     """Raw image data (PNG, JPEG, etc.)."""
 
@@ -247,7 +250,7 @@ class Outline(Element):
     @property
     def text(self) -> str:
         """Get all text content joined with newlines."""
-        return "\n".join(elem.text for elem in self.children if elem.text)
+        return "\n".join(elem.text for elem in self.iter_elements() if elem.text)
 
     def iter_children(self) -> Iterator[Element]:
         return iter(self.children)
@@ -337,24 +340,23 @@ class Page(Element):
 
     def iter_images(self) -> Iterator[Image]:
         """Iterate over all Image elements on this page."""
-        for elem in self.iter_elements():
-            for content in elem.contents:
-                if isinstance(content, Image):
-                    yield content
+        # Images can appear either inside OutlineElements (as contents)
+        # or directly on the page (ElementChildNodesOfPage).
+        for elem in self.iter_all_elements():
+            if isinstance(elem, Image):
+                yield elem
 
     def iter_tables(self) -> Iterator[Table]:
         """Iterate over all Table elements on this page."""
-        for elem in self.iter_elements():
-            for content in elem.contents:
-                if isinstance(content, Table):
-                    yield content
+        for elem in self.iter_all_elements():
+            if isinstance(elem, Table):
+                yield elem
 
     def iter_attachments(self) -> Iterator[AttachedFile]:
         """Iterate over all AttachedFile elements on this page."""
-        for elem in self.iter_elements():
-            for content in elem.contents:
-                if isinstance(content, AttachedFile):
-                    yield content
+        for elem in self.iter_all_elements():
+            if isinstance(elem, AttachedFile):
+                yield elem
 
     @property
     def text(self) -> str:

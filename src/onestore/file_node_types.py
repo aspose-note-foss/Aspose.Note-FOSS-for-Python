@@ -428,20 +428,20 @@ def _parse_object_space_manifest_list_reference_fnd(
 def _parse_file_data_store_list_reference_fnd(node: FileNode, ctx: ParseContext) -> FileDataStoreListReferenceFND:
     # Spec (docs/ms-onestore/11-file-node-types-file-data.md): BaseType=2, only FileNodeChunkReference.
     if node.header.base_type != 2:
-        raise OneStoreFormatError(
-            "FileDataStoreListReferenceFND MUST have BaseType==2",
-            offset=node.header.offset,
-        )
+        msg = "FileDataStoreListReferenceFND MUST have BaseType==2"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
     if node.chunk_ref is None:
         raise OneStoreFormatError(
             "FileDataStoreListReferenceFND MUST contain a FileNodeChunkReference",
             offset=node.header.offset,
         )
     if len(node.fnd) != 0:
-        raise OneStoreFormatError(
-            "FileDataStoreListReferenceFND MUST contain no data beyond FileNodeChunkReference",
-            offset=node.header.offset,
-        )
+        msg = "FileDataStoreListReferenceFND MUST contain no data beyond FileNodeChunkReference"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
 
     return FileDataStoreListReferenceFND(ref=node.chunk_ref)
 
@@ -449,22 +449,27 @@ def _parse_file_data_store_list_reference_fnd(node: FileNode, ctx: ParseContext)
 def _parse_file_data_store_object_reference_fnd(node: FileNode, ctx: ParseContext) -> FileDataStoreObjectReferenceFND:
     # Spec (docs/ms-onestore/11-file-node-types-file-data.md): BaseType=2, FileNodeChunkReference + 16-byte GUID.
     if node.header.base_type != 2:
-        raise OneStoreFormatError(
-            "FileDataStoreObjectReferenceFND MUST have BaseType==2",
-            offset=node.header.offset,
-        )
+        msg = "FileDataStoreObjectReferenceFND MUST have BaseType==2"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
     if node.chunk_ref is None:
         raise OneStoreFormatError(
             "FileDataStoreObjectReferenceFND MUST contain a FileNodeChunkReference",
             offset=node.header.offset,
         )
     if len(node.fnd) != 16:
-        raise OneStoreFormatError(
-            "FileDataStoreObjectReferenceFND payload MUST be 16-byte guidReference",
-            offset=node.header.offset,
-        )
+        msg = "FileDataStoreObjectReferenceFND payload MUST be 16-byte guidReference"
+        if ctx.strict:
+            raise OneStoreFormatError(msg, offset=node.header.offset)
+        ctx.warn(msg, offset=node.header.offset)
 
+    # Best-effort: clamp/pad to 16 bytes in tolerant mode.
     guid_reference = bytes(node.fnd)
+    if len(guid_reference) < 16:
+        guid_reference = guid_reference.ljust(16, b"\x00")
+    elif len(guid_reference) > 16:
+        guid_reference = guid_reference[:16]
     return FileDataStoreObjectReferenceFND(ref=node.chunk_ref, guid_reference=guid_reference)
 
 

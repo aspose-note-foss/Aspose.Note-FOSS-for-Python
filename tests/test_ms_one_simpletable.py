@@ -14,7 +14,7 @@ from ms_one.entities.structure import Page, Section  # noqa: E402
 
 
 def _simpletable_path() -> Path | None:
-    p = ROOT / "SimpleTable.one"
+    p = ROOT / "testfiles" / "SimpleTable.one"
     return p if p.exists() else None
 
 

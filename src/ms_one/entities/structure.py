@@ -49,6 +49,10 @@ class RichText(BaseNode):
 @dataclass(frozen=True, slots=True)
 class Image(BaseNode):
     alt_text: str | None
+    original_filename: str | None = None
+    # Zero or more file-data references extracted from properties.
+    # Values are canonical UUID strings (lowercase, 36 chars) extracted from `<ifndf>{GUID}</ifndf>`.
+    file_data_guids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -55,7 +55,7 @@ from onestore.file_node_types import (  # noqa: E402
 
 
 def _simpletable_path() -> Path | None:
-    p = ROOT / "SimpleTable.one"
+    p = ROOT / "testfiles" / "SimpleTable.one"
     return p if p.exists() else None
 
 
