@@ -368,7 +368,7 @@ class Document(CompositeNode):
             return
 
         # Load from file or stream using the existing parser.
-        import onenote  # local import to avoid dependency at import time
+        from ._internal import onenote  # local import to avoid dependency at import time
 
         strict = False
         if load_options is not None and getattr(load_options, "DocumentPassword", None):
@@ -439,7 +439,7 @@ class Document(CompositeNode):
 
             # PdfSaveOptions is a compatibility stub; pass through a small subset of exporter options.
             if isinstance(opts, PdfSaveOptions):
-                from onenote.pdf_export import PdfExportOptions
+                from ._internal.onenote.pdf_export import PdfExportOptions
 
                 pdf_opts = PdfExportOptions()
                 if getattr(opts, "TagIconDir", None):
@@ -487,7 +487,7 @@ def _convert_page(p: Any) -> Page:
 
 def _convert_element(elem: Any) -> Node | None:
     # Convert from onenote.elements.* to Aspose-like node types.
-    import onenote.elements as oe
+    from ._internal.onenote import elements as oe
 
     if isinstance(elem, oe.Outline):
         o = Outline()

@@ -23,7 +23,7 @@ try:
 except ImportError:
     HAS_REPORTLAB = False
 
-from onenote import Document  # noqa: E402
+from aspose.note._internal.onenote import Document  # noqa: E402
 
 
 def _fixture_path(name: str) -> Path | None:
@@ -87,7 +87,7 @@ class TestPdfExport3Images(unittest.TestCase):
 
     def test_images_embedded(self) -> None:
         """Ensure embedded images are resolved from the .one file and written into the PDF."""
-        from onenote.elements import Image
+        from aspose.note._internal.onenote.elements import Image
 
         images_with_data = 0
         for page in self.doc.pages:
@@ -163,7 +163,7 @@ class TestPdfExportNumberedListWithTags(unittest.TestCase):
 
     def test_list_marker_formatting_is_sanitized(self) -> None:
         """Ensure list markers don't include MS-ONE control bytes and use real numbering."""
-        from onenote.pdf_export import _compute_list_marker, _ListState
+        from aspose.note._internal.onenote.pdf_export import _compute_list_marker, _ListState
 
         page = self.doc.pages[0]
         outlines = list(page.iter_outlines())
@@ -318,7 +318,7 @@ class TestPdfExportOptions(unittest.TestCase):
     
     def test_custom_page_size(self) -> None:
         """Test export with custom page size."""
-        from onenote import PdfExportOptions
+        from aspose.note._internal.onenote.pdf_export import PdfExportOptions
         
         options = PdfExportOptions(
             page_width=595.0,  # A4 width
@@ -330,7 +330,7 @@ class TestPdfExportOptions(unittest.TestCase):
     
     def test_custom_margins(self) -> None:
         """Test export with custom margins."""
-        from onenote import PdfExportOptions
+        from aspose.note._internal.onenote.pdf_export import PdfExportOptions
         
         options = PdfExportOptions(
             margin_left=50,
@@ -344,7 +344,7 @@ class TestPdfExportOptions(unittest.TestCase):
     
     def test_no_tags(self) -> None:
         """Test export without tags."""
-        from onenote import PdfExportOptions
+        from aspose.note._internal.onenote.pdf_export import PdfExportOptions
         
         options = PdfExportOptions(include_tags=False)
         output_path = _output_dir() / "FormattedRichText_no_tags.pdf"
@@ -353,7 +353,7 @@ class TestPdfExportOptions(unittest.TestCase):
     
     def test_no_images(self) -> None:
         """Test export without images."""
-        from onenote import PdfExportOptions
+        from aspose.note._internal.onenote.pdf_export import PdfExportOptions
         
         options = PdfExportOptions(include_images=False)
         output_path = _output_dir() / "FormattedRichText_no_images.pdf"
@@ -362,7 +362,7 @@ class TestPdfExportOptions(unittest.TestCase):
     
     def test_custom_font_size(self) -> None:
         """Test export with custom font size."""
-        from onenote import PdfExportOptions
+        from aspose.note._internal.onenote.pdf_export import PdfExportOptions
         
         options = PdfExportOptions(
             default_font_size=14,
