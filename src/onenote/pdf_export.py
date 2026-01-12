@@ -18,6 +18,185 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO
 
+
+def _number_to_alpha(n: int, *, upper: bool) -> str:
+    if n <= 0:
+        return ""
+    chars: list[str] = []
+    while n > 0:
+        n -= 1
+        chars.append(chr((n % 26) + (ord('A') if upper else ord('a'))))
+        n //= 26
+    return "".join(reversed(chars))
+
+
+def _number_to_roman(n: int, *, upper: bool) -> str:
+    if n <= 0:
+        return ""
+    # Best-effort; OneNote lists rarely exceed this.
+    n = min(n, 3999)
+    parts: list[str] = []
+    mapping = (
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    )
+    for value, token in mapping:
+        while n >= value:
+            parts.append(token)
+            n -= value
+    s = "".join(parts)
+    return s if upper else s.lower()
+
+
+def _parse_ms_one_number_list_format(fmt: str | None) -> tuple[int | None, str, str]:
+    """Parse MS-ONE NumberListFormat into (style_code, prefix, suffix).
+
+    Observed formats often include control bytes (e.g. '\x03', '\x00') around
+    the U+FFFD placeholder; ReportLab will render those as black squares.
+    """
+    if not fmt:
+        return None, "", "."
+
+    placeholder = "\uFFFD"
+    idx = fmt.find(placeholder)
+    if idx < 0:
+        # Not a numbered format; return printable content only.
+        printable = "".join(ch for ch in fmt if ord(ch) >= 32)
+        return None, printable, ""
+
+    prefix = "".join(ch for ch in fmt[:idx] if ord(ch) >= 32)
+
+    style_code: int | None = None
+    if idx + 1 < len(fmt) and ord(fmt[idx + 1]) < 32:
+        style_code = ord(fmt[idx + 1])
+
+    suffix = "".join(ch for ch in fmt[idx + 1 :] if ord(ch) >= 32 and ch != placeholder)
+    if not suffix:
+        suffix = "."
+
+    return style_code, prefix, suffix
+
+
+def _format_list_number(n: int, style_code: int | None) -> str:
+    """Format list item number based on observed MS-ONE style codes."""
+    # Observed in fixtures:
+    # - 0x00: decimal
+    # - 0x04: lower alpha
+    # - 0x02: lower roman
+    if style_code == 0x04:
+        return _number_to_alpha(n, upper=False)
+    if style_code == 0x03:
+        return _number_to_alpha(n, upper=True)
+    if style_code == 0x02:
+        return _number_to_roman(n, upper=False)
+    if style_code == 0x01:
+        return _number_to_roman(n, upper=True)
+    return str(n)
+
+
+def _compute_list_marker(fmt: str | None, n: int) -> str:
+    style_code, prefix, suffix = _parse_ms_one_number_list_format(fmt)
+    return f"{prefix}{_format_list_number(n, style_code)}{suffix}".strip()
+
+
+@dataclass
+class _ListState:
+    """Tracks list numbering across nested OutlineElements during PDF rendering."""
+
+    counters: dict[int, int] = field(default_factory=dict)
+    formats: dict[int, str] = field(default_factory=dict)
+
+    def reset_from_level(self, indent_level: int) -> None:
+        for level in list(self.counters.keys()):
+            if level >= indent_level:
+                self.counters.pop(level, None)
+                self.formats.pop(level, None)
+
+    def next_bullet(self, elem: "OutlineElement", indent_level: int) -> str | None:
+        """Return bullet text for this element, or None if not a list item."""
+        fmt = elem.list_format
+        if not fmt:
+            # Breaks the list chain at this indent level.
+            self.reset_from_level(indent_level)
+            return None
+
+        # Bulleted lists: render a simple bullet.
+        if not elem.is_numbered:
+            # Reset deeper levels when continuing at this level.
+            self.reset_from_level(indent_level + 1)
+            return "•"
+
+        # Numbered lists.
+        # If format changes at this level, restart numbering.
+        fmt_key = "".join(ch for ch in fmt if ord(ch) >= 32 or ch == "\uFFFD")
+        if self.formats.get(indent_level) != fmt_key:
+            self.counters[indent_level] = 0
+            self.formats[indent_level] = fmt_key
+
+        # Apply restart override if present.
+        if elem.list_restart is not None:
+            self.counters[indent_level] = elem.list_restart
+        else:
+            self.counters[indent_level] = self.counters.get(indent_level, 0) + 1
+
+        # Reset deeper nested counters when we emit a marker at this level.
+        self.reset_from_level(indent_level + 1)
+        marker = _compute_list_marker(fmt, self.counters[indent_level])
+
+        # Include tag icons (plain) before the list marker, matching OneNote's layout.
+        # Prefer rich-text tags when present on the first paragraph.
+        tags: list["NoteTag"] = []
+        if getattr(elem, "tags", None):
+            tags.extend(list(elem.tags))
+        try:
+            for rt in elem.iter_text():
+                if getattr(rt, "tags", None):
+                    tags.extend(list(rt.tags))
+                    break
+        except Exception:
+            pass
+
+        # De-duplicate by (shape, label)
+        seen: set[tuple[int | None, str | None]] = set()
+        deduped: list["NoteTag"] = []
+        for t in tags:
+            key = (getattr(t, "shape", None), getattr(t, "label", None))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(t)
+
+        tag_prefix = ""
+        if deduped:
+            # ASCII only.
+            shape_map: dict[int, str] = {
+                13: "*",
+                15: "?",
+                3: "[]",
+                12: "cal",
+                118: "@",
+                121: "music",
+            }
+            icons: list[str] = []
+            for t in deduped:
+                if t.shape is not None and t.shape in shape_map:
+                    icons.append(shape_map[t.shape])
+            if icons:
+                tag_prefix = " ".join(icons)
+
+        return f"{tag_prefix} {marker}".strip()
+
 if TYPE_CHECKING:
     from .document import Document
     from .elements import (
@@ -215,7 +394,7 @@ class PdfExporter:
         
         # Process outlines and other content
         for child in page.children:
-            self._render_element(child, story, styles, body_style, indent_level=0)
+            self._render_element(child, story, styles, body_style, indent_level=0, list_state=None)
     
     def _render_element(
         self, 
@@ -223,7 +402,8 @@ class PdfExporter:
         story: list, 
         styles, 
         body_style,
-        indent_level: int = 0
+        indent_level: int = 0,
+        list_state: "_ListState | None" = None,
     ) -> None:
         """Render any element to PDF flowables."""
         from .elements import Outline, OutlineElement, RichText, Image, Table, AttachedFile
@@ -231,7 +411,7 @@ class PdfExporter:
         if isinstance(element, Outline):
             self._render_outline(element, story, styles, body_style)
         elif isinstance(element, OutlineElement):
-            self._render_outline_element(element, story, styles, body_style, indent_level)
+            self._render_outline_element(element, story, styles, body_style, indent_level, list_state)
         elif isinstance(element, RichText):
             # RichText at top level - render directly with paragraph style
             text = self._format_rich_text(element)
@@ -261,9 +441,11 @@ class PdfExporter:
     ) -> None:
         """Render an outline container."""
         from reportlab.platypus import Spacer
+
+        list_state = _ListState()
         
         for child in outline.children:
-            self._render_outline_element(child, story, styles, body_style, indent_level=0)
+            self._render_outline_element(child, story, styles, body_style, indent_level=0, list_state=list_state)
         
         story.append(Spacer(1, 6))
     
@@ -273,7 +455,8 @@ class PdfExporter:
         story: list, 
         styles, 
         body_style,
-        indent_level: int = 0
+        indent_level: int = 0,
+        list_state: "_ListState | None" = None,
     ) -> None:
         """Render an outline element (paragraph-like container)."""
         from reportlab.platypus import Paragraph, Spacer, ListFlowable, ListItem
@@ -282,49 +465,55 @@ class PdfExporter:
         # Calculate indentation
         indent = 20 * indent_level
         
-        # Create indented style
+        # Determine list marker (and sanitize MS-ONE control bytes).
+        bullet_text: str | None = None
+        if list_state is not None:
+            bullet_text = list_state.next_bullet(elem, indent_level)
+
+        # Styles: use a dedicated bullet indent so multi-line items align.
+        # Reserve enough space for markers like "* ? 12." or "* [] ? @ music cal a.".
+        # ReportLab core fonts don't provide precise glyph metrics here, so use a simple heuristic.
+        bullet_gap = 0
+        if bullet_text:
+            bullet_gap = max(18, min(80, 6 + (len(bullet_text) * 4)))
         indented_style = ParagraphStyle(
             f'Indented{indent_level}',
             parent=body_style,
-            leftIndent=indent,
+            leftIndent=indent + bullet_gap,
+            bulletIndent=indent,
         )
         
-        # Handle numbered/bulleted lists
-        list_prefix = ""
-        if elem.is_numbered and elem.list_format:
-            # Replace the placeholder with a number indicator
-            list_prefix = elem.list_format.replace('\ufffd', '#') + " "
-        elif elem.list_format:
-            # Bullet list
-            list_prefix = "• "
-        
-        # Render tags if present
-        if self.options.include_tags and elem.tags:
-            tag_text = self._format_tags(elem.tags)
-            if tag_text:
-                story.append(Paragraph(tag_text, indented_style))
-        
         # Render contents
+        bullet_used = False
+        tags_rendered_in_bullet = bool(bullet_text and self.options.include_tags)
         for content in elem.contents:
             if hasattr(content, '__class__'):
                 from .elements import RichText, Image, Table
                 
                 if isinstance(content, RichText):
-                    text = self._format_rich_text(content, list_prefix)
+                    text = self._format_rich_text(
+                        content,
+                        prefix="",
+                        include_tag_prefix=(self.options.include_tags and not tags_rendered_in_bullet and not bullet_used),
+                    )
                     if text.strip():
-                        story.append(Paragraph(text, indented_style))
+                        if not bullet_used and bullet_text:
+                            story.append(Paragraph(text, indented_style, bulletText=bullet_text))
+                            bullet_used = True
+                        else:
+                            story.append(Paragraph(text, indented_style))
                 elif isinstance(content, Image):
                     self._render_image(content, story, styles)
                 elif isinstance(content, Table):
                     self._render_table(content, story, styles, body_style)
                 else:
-                    self._render_element(content, story, styles, body_style, indent_level)
+                    self._render_element(content, story, styles, body_style, indent_level, list_state=list_state)
         
         # Render nested children
         for child in elem.children:
-            self._render_element(child, story, styles, body_style, indent_level + 1)
+            self._render_element(child, story, styles, body_style, indent_level + 1, list_state=list_state)
     
-    def _format_rich_text(self, rt: "RichText", prefix: str = "") -> str:
+    def _format_rich_text(self, rt: "RichText", prefix: str = "", *, include_tag_prefix: bool = True) -> str:
         """Format rich text with HTML tags for ReportLab."""
         if not rt.text:
             return prefix
@@ -357,8 +546,8 @@ class PdfExporter:
             text = self._escape_html(text)
         
         # Handle tags on the rich text
-        if self.options.include_tags and rt.tags:
-            tag_prefix = self._format_tags(rt.tags)
+        if include_tag_prefix and self.options.include_tags and rt.tags:
+            tag_prefix = self._format_tags(rt.tags, rich=True)
             if tag_prefix:
                 text = tag_prefix + " " + text
         
@@ -407,21 +596,47 @@ class PdfExporter:
         
         return result
     
-    def _format_tags(self, tags: list["NoteTag"]) -> str:
-        """Format note tags as text."""
+    def _format_tags(self, tags: list["NoteTag"], *, rich: bool) -> str:
+        """Format note tags as icon-like prefixes.
+
+        ReportLab core fonts are not fully Unicode-capable, so we prefer ASCII
+        markers that render consistently in PDF viewers.
+        """
         if not tags:
             return ""
-        
-        tag_parts = []
+
+        # Common MS-ONE tag shapes observed in fixtures.
+        # Keep to ASCII so it works with ReportLab core fonts.
+        shape_map: dict[int, tuple[str, str]] = {
+            13: ("*", "#f39c12"),  # Important
+            15: ("?", "#8e44ad"),  # Question
+            3: ("[]", "#2980b9"),  # To-do
+            12: ("cal", "#16a085"),  # Meeting
+            118: ("@", "#2980b9"),  # Contact
+            121: ("music", "#7f8c8d"),  # Music
+        }
+
+        parts: list[str] = []
         for tag in tags:
-            if tag.label:
-                # Show label
-                tag_parts.append(f"[{self._escape_html(tag.label)}]")
-            elif tag.shape is not None:
-                # Show shape indicator
-                tag_parts.append(f"[Tag:{tag.shape}]")
-        
-        return " ".join(tag_parts)
+            icon = None
+            color = None
+            if tag.shape is not None and tag.shape in shape_map:
+                icon, color = shape_map[tag.shape]
+            if icon is None:
+                # Fallback: show label (if any), otherwise the raw shape id.
+                if tag.label:
+                    icon = f"[{self._escape_html(tag.label)}]" if rich else f"[{tag.label}]"
+                elif tag.shape is not None:
+                    icon = f"[Tag:{tag.shape}]"
+                else:
+                    continue
+
+            if rich and color and not icon.startswith("["):
+                parts.append(f'<font color="{color}"><b>{self._escape_html(icon)}</b></font>')
+            else:
+                parts.append(icon)
+
+        return " ".join(parts)
     
     def _render_image(self, img: "Image", story: list, styles) -> None:
         """Render an image to PDF."""
@@ -560,7 +775,7 @@ class PdfExporter:
         
         # Render table tags if present
         if self.options.include_tags and table.tags:
-            tag_text = self._format_tags(table.tags)
+            tag_text = self._format_tags(table.tags, rich=True)
             if tag_text:
                 story.append(Paragraph(tag_text, body_style))
         

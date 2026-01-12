@@ -38,3 +38,4 @@ Desktop.ini
 # If you use VS Code, keep settings under version control by default.
 # Uncomment to ignore local VS Code config:
 # .vscode/
+*.pdf

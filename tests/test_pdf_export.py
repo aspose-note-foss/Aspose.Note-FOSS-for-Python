@@ -161,6 +161,34 @@ class TestPdfExportNumberedListWithTags(unittest.TestCase):
         self.assertTrue(self.output_path.exists())
         self.assertGreater(self.output_path.stat().st_size, 100)
 
+    def test_list_marker_formatting_is_sanitized(self) -> None:
+        """Ensure list markers don't include MS-ONE control bytes and use real numbering."""
+        from onenote.pdf_export import _compute_list_marker, _ListState
+
+        page = self.doc.pages[0]
+        outlines = list(page.iter_outlines())
+        self.assertGreaterEqual(len(outlines), 2)
+
+        # Outline 0: decimal numbering (1., 2., 3., 4.)
+        fmt_decimal = outlines[0].children[0].list_format
+        self.assertEqual(_compute_list_marker(fmt_decimal, 1), "1.")
+        self.assertEqual(_compute_list_marker(fmt_decimal, 4), "4.")
+
+        # Outline 1: nested list uses alpha (a., b., c.) and roman (i., ii.)
+        first = outlines[1].children[0]
+        fmt_alpha = first.children[0].list_format  # First-first
+        fmt_roman = first.children[1].children[0].list_format  # First-second-first
+        self.assertEqual(_compute_list_marker(fmt_alpha, 1), "a.")
+        self.assertEqual(_compute_list_marker(fmt_alpha, 3), "c.")
+        self.assertEqual(_compute_list_marker(fmt_roman, 1), "i.")
+        self.assertEqual(_compute_list_marker(fmt_roman, 2), "ii.")
+
+        # Bullet text should include tag markers (ASCII) for this fixture.
+        ls = _ListState()
+        b0 = ls.next_bullet(outlines[0].children[0], 0) or ""
+        self.assertIn("1.", b0)
+        self.assertIn("*", b0)  # Important tag
+
 
 @unittest.skipUnless(HAS_REPORTLAB, "reportlab not installed")
 class TestPdfExportAttachedFile(unittest.TestCase):

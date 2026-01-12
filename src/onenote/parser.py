@@ -829,4 +829,5 @@ def _convert_attached_file(
         _oid=f.oid.guid if f.oid else b"",
         filename=f.original_filename or "",
         data=data,
+        tags=_convert_note_tags(getattr(f, "tags", None)),
     )

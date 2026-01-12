@@ -170,6 +170,9 @@ class AttachedFile(Element):
     extension: str | None = None
     """File extension (without dot)."""
 
+    tags: list[NoteTag] = field(default_factory=list)
+    """Note tags associated with this attached file."""
+
     @property
     def size(self) -> int:
         """Size of the attached file in bytes."""

@@ -1075,6 +1075,42 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
                 if extra:
                     children = tuple(list(children) + extra)
 
+        # Some files contain container-like nodes under an Outline that are not yet modeled
+        # as first-class entities (thus parsed as UnknownNode). These containers may hold
+        # OutlineElement references via ElementChildNodes. Expand them so list/text content
+        # becomes reachable from the page tree.
+        if children and rec.properties is not None:
+            existing_oe_oids = set(ch.oid for ch in children if isinstance(ch, OutlineElement))
+            expanded: list[BaseNode] = []
+            for ch in children:
+                if isinstance(ch, UnknownNode) and ch.raw_properties is not None:
+                    oids = get_oid_array(ch.raw_properties, PID_ELEMENT_CHILD_NODES) or get_oid_array(
+                        ch.raw_properties, PID_CONTENT_CHILD_NODES
+                    )
+                    if oids:
+                        hits = 0
+                        for x in oids:
+                            rr = state.index.get(x)
+                            if rr is not None and rr.jcid is not None and int(rr.jcid.index) == JCID_OUTLINE_ELEMENT_NODE_INDEX:
+                                hits += 1
+
+                        # Only expand when the referenced list mostly points at OutlineElement.
+                        if hits >= 2 and hits * 2 >= len(oids):
+                            guessed = [parse_node(x, state) for x in oids]
+                            extra = [
+                                n
+                                for n in guessed
+                                if isinstance(n, OutlineElement) and n.oid not in existing_oe_oids
+                            ]
+                            if extra:
+                                expanded.extend(extra)
+                                existing_oe_oids |= {n.oid for n in extra}
+                                continue
+
+                expanded.append(ch)
+
+            children = tuple(expanded)
+
         # Layout properties
         offset_h = _float_from_bytes(get_bytes(rec.properties, PID_OFFSET_FROM_PARENT_HORIZ)) if rec.properties else None
         offset_v = _float_from_bytes(get_bytes(rec.properties, PID_OFFSET_FROM_PARENT_VERT)) if rec.properties else None
