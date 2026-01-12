@@ -54,6 +54,31 @@ class TestAsposeNoteTitleIsTraversable(unittest.TestCase):
         self.assertGreaterEqual(len(titles), 1)
 
 
+class TestAsposeNoteOutlineCoordinatesAreExposed(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        p = _fixture_path("FormattedRichText.one")
+        if p is None:
+            raise unittest.SkipTest("FormattedRichText.one not found")
+        cls.path = p
+
+    def test_outline_has_coordinates_properties(self) -> None:
+        from aspose.note import Document, Outline
+
+        doc = Document(self.path)
+        outlines = doc.GetChildNodes(Outline)
+        self.assertGreaterEqual(len(outlines), 1)
+
+        o = outlines[0]
+        self.assertTrue(hasattr(o, "X"))
+        self.assertTrue(hasattr(o, "Y"))
+        self.assertTrue(hasattr(o, "Width"))
+
+        self.assertTrue(o.X is None or isinstance(o.X, float))
+        self.assertTrue(o.Y is None or isinstance(o.Y, float))
+        self.assertTrue(o.Width is None or isinstance(o.Width, float))
+
+
 @unittest.skipUnless(HAS_REPORTLAB, "reportlab not installed")
 class TestAsposeNoteDocumentSavePdf(unittest.TestCase):
     @classmethod

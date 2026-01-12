@@ -246,6 +246,10 @@ class OutlineElement(CompositeNode):
 
 @dataclass
 class Outline(CompositeNode):
+    X: float | None = None  # noqa: N815
+    Y: float | None = None  # noqa: N815
+    Width: float | None = None  # noqa: N815
+
     def _accept(self, visitor: DocumentVisitor) -> None:
         visitor.VisitOutlineStart(self)
         for child in self._children:
@@ -433,10 +437,19 @@ class Document(CompositeNode):
             if self._onenote_doc is None:
                 raise UnsupportedSaveFormatException("Cannot export empty Document to PDF")
 
-            # PdfSaveOptions is currently a compatibility stub; underlying exporter supports different options.
-            # Keep API shape compatible; ignore options that we don't support.
+            # PdfSaveOptions is a compatibility stub; pass through a small subset of exporter options.
             if isinstance(opts, PdfSaveOptions):
-                self._onenote_doc.export_pdf(target)
+                from onenote.pdf_export import PdfExportOptions
+
+                pdf_opts = PdfExportOptions()
+                if getattr(opts, "TagIconDir", None):
+                    pdf_opts.tag_icon_dir = opts.TagIconDir
+                if getattr(opts, "TagIconSize", None) is not None:
+                    pdf_opts.tag_icon_size = float(opts.TagIconSize)
+                if getattr(opts, "TagIconGap", None) is not None:
+                    pdf_opts.tag_icon_gap = float(opts.TagIconGap)
+
+                self._onenote_doc.export_pdf(target, options=pdf_opts)
             else:
                 self._onenote_doc.export_pdf(target)
             return
@@ -478,6 +491,9 @@ def _convert_element(elem: Any) -> Node | None:
 
     if isinstance(elem, oe.Outline):
         o = Outline()
+        o.X = getattr(elem, "x", None)
+        o.Y = getattr(elem, "y", None)
+        o.Width = getattr(elem, "width", None)
         for ch in getattr(elem, "children", []) or []:
             ce = _convert_element(ch)
             if ce is not None:

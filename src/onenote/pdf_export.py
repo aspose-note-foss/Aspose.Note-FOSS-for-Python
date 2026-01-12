@@ -154,48 +154,7 @@ class _ListState:
         self.reset_from_level(indent_level + 1)
         marker = _compute_list_marker(fmt, self.counters[indent_level])
 
-        # Include tag icons (plain) before the list marker, matching OneNote's layout.
-        # Prefer rich-text tags when present on the first paragraph.
-        tags: list["NoteTag"] = []
-        if getattr(elem, "tags", None):
-            tags.extend(list(elem.tags))
-        try:
-            for rt in elem.iter_text():
-                if getattr(rt, "tags", None):
-                    tags.extend(list(rt.tags))
-                    break
-        except Exception:
-            pass
-
-        # De-duplicate by (shape, label)
-        seen: set[tuple[int | None, str | None]] = set()
-        deduped: list["NoteTag"] = []
-        for t in tags:
-            key = (getattr(t, "shape", None), getattr(t, "label", None))
-            if key in seen:
-                continue
-            seen.add(key)
-            deduped.append(t)
-
-        tag_prefix = ""
-        if deduped:
-            # ASCII only.
-            shape_map: dict[int, str] = {
-                13: "*",
-                15: "?",
-                3: "[]",
-                12: "cal",
-                118: "@",
-                121: "music",
-            }
-            icons: list[str] = []
-            for t in deduped:
-                if t.shape is not None and t.shape in shape_map:
-                    icons.append(shape_map[t.shape])
-            if icons:
-                tag_prefix = " ".join(icons)
-
-        return f"{tag_prefix} {marker}".strip()
+        return marker
 
 if TYPE_CHECKING:
     from .document import Document
@@ -265,6 +224,23 @@ class PdfExportOptions:
     
     include_tags: bool = True
     """Whether to render note tags."""
+
+    tag_icon_dir: str | Path | None = None
+    """Optional directory with custom tag icon images (PNG).
+
+    If provided, the exporter will try to load icons by:
+    - shape id:   shape_<id>.png  (e.g. shape_13.png)
+    - label text: label_<slug>.png (e.g. label_important.png)
+
+    This enables using user-supplied icon sets (e.g. extracted from OneNote)
+    without shipping Microsoft-owned icon assets in this repository.
+    """
+
+    tag_icon_size: float = 10.0
+    """Rendered tag icon size in points."""
+
+    tag_icon_gap: float = 2.0
+    """Horizontal gap between tag icons in points."""
     
     include_images: bool = True
     """Whether to include images in export."""
@@ -290,6 +266,7 @@ class PdfExporter:
         """
         self.options = options or PdfExportOptions()
         self._check_reportlab()
+        self._tag_icon_image_cache: dict[str, object] = {}
     
     def _check_reportlab(self) -> None:
         """Check if reportlab is available."""
@@ -329,8 +306,56 @@ class PdfExporter:
         
         try:
             # Create document
-            page_width = self.options.page_width
-            page_height = self.options.page_height
+            page_width = float(self.options.page_width)
+            page_height = float(self.options.page_height)
+
+            # If document provides page dimensions or layout coordinates exceed defaults,
+            # auto-expand the PDF page size so content is not clipped.
+            doc_page_width = 0.0
+            doc_page_height = 0.0
+            try:
+                for p in getattr(document, "pages", []) or []:
+                    w = getattr(p, "width", None)
+                    h = getattr(p, "height", None)
+                    if w is not None:
+                        doc_page_width = max(doc_page_width, float(w))
+                    if h is not None:
+                        doc_page_height = max(doc_page_height, float(h))
+            except Exception:
+                pass
+
+            required_width = 0.0
+            required_height = 0.0
+            try:
+                for p in getattr(document, "pages", []) or []:
+                    # Outline extents
+                    for o in getattr(p, "iter_outlines", lambda: [])() or []:
+                        ox = getattr(o, "x", None)
+                        ow = getattr(o, "width", None)
+                        oy = getattr(o, "y", None)
+                        if ox is not None and ow is not None:
+                            left = max(float(self.options.margin_left), float(ox))
+                            required_width = max(required_width, left + float(ow) + float(self.options.margin_right))
+                        if oy is not None:
+                            required_height = max(required_height, max(float(self.options.margin_top), float(oy)) + float(self.options.margin_bottom))
+
+                    # Image extents (height is known)
+                    for img in getattr(p, "iter_images", lambda: [])() or []:
+                        ix = getattr(img, "x", None)
+                        iw = getattr(img, "width", None)
+                        iy = getattr(img, "y", None)
+                        ih = getattr(img, "height", None)
+                        if ix is not None and iw is not None:
+                            left = max(float(self.options.margin_left), float(ix))
+                            required_width = max(required_width, left + float(iw) + float(self.options.margin_right))
+                        if iy is not None and ih is not None:
+                            top = max(float(self.options.margin_top), float(iy))
+                            required_height = max(required_height, top + float(ih) + float(self.options.margin_bottom))
+            except Exception:
+                pass
+
+            page_width = max(page_width, doc_page_width, required_width)
+            page_height = max(page_height, doc_page_height, required_height)
             
             doc = SimpleDocTemplate(
                 output_file,
@@ -358,6 +383,8 @@ class PdfExporter:
                 parent=styles['Normal'],
                 fontSize=self.options.default_font_size,
                 fontName=self.options.default_font_name,
+                leading=float(self.options.default_font_size) * 1.2,
+                autoLeading='max',
                 spaceAfter=6,
             )
             
@@ -385,6 +412,7 @@ class PdfExporter:
     ) -> None:
         """Render a page to PDF flowables."""
         from reportlab.platypus import Paragraph, Spacer
+        from .elements import Outline
         
         # Page title
         if page.title:
@@ -392,9 +420,32 @@ class PdfExporter:
             story.append(Paragraph(title_text, title_style))
             story.append(Spacer(1, 12))
         
-        # Process outlines and other content
-        for child in page.children:
-            self._render_element(child, story, styles, body_style, indent_level=0, list_state=None)
+        # Process outlines and other content.
+        # Prefer a visual order for outlines when coordinates exist.
+        outlines: list[Outline] = []
+        other: list = []
+        for ch in page.children:
+            if isinstance(ch, Outline):
+                outlines.append(ch)
+            else:
+                other.append(ch)
+
+        def _sort_key(o: Outline) -> tuple[float, float]:
+            y = o.y if o.y is not None else 1e18
+            x = o.x if o.x is not None else 1e18
+            return (y, x)
+
+        for child in sorted(outlines, key=_sort_key) + other:
+            self._render_element(
+                child,
+                story,
+                styles,
+                body_style,
+                indent_level=0,
+                list_state=None,
+                outline_x_offset=0.0,
+                max_width=None,
+            )
     
     def _render_element(
         self, 
@@ -404,14 +455,45 @@ class PdfExporter:
         body_style,
         indent_level: int = 0,
         list_state: "_ListState | None" = None,
+        outline_x_offset: float = 0.0,
+        max_width: float | None = None,
     ) -> None:
         """Render any element to PDF flowables."""
         from .elements import Outline, OutlineElement, RichText, Image, Table, AttachedFile
         
         if isinstance(element, Outline):
-            self._render_outline(element, story, styles, body_style)
+            # element.x/width are page-layout coordinates. ReportLab indents are relative
+            # to the frame (inside margins), so translate and clamp to avoid producing
+            # near-zero usable line widths.
+            x_page = float(element.x or 0.0)
+            x_frame = max(0.0, x_page - float(self.options.margin_left or 0.0))
+
+            effective_max_width = element.width
+            if effective_max_width is not None:
+                effective_max_width = float(effective_max_width)
+                effective_max_width = min(effective_max_width, self._available_width() - x_frame)
+                if effective_max_width <= 1.0:
+                    effective_max_width = None
+
+            self._render_outline(
+                element,
+                story,
+                styles,
+                body_style,
+                outline_x_offset=x_frame,
+                max_width=effective_max_width,
+            )
         elif isinstance(element, OutlineElement):
-            self._render_outline_element(element, story, styles, body_style, indent_level, list_state)
+            self._render_outline_element(
+                element,
+                story,
+                styles,
+                body_style,
+                indent_level,
+                list_state,
+                outline_x_offset=outline_x_offset,
+                max_width=max_width,
+            )
         elif isinstance(element, RichText):
             # RichText at top level - render directly with paragraph style
             text = self._format_rich_text(element)
@@ -419,16 +501,55 @@ class PdfExporter:
                 from reportlab.platypus import Paragraph
                 from reportlab.lib.styles import ParagraphStyle
                 indent = 20 * indent_level
+                base_left = max(0.0, float(outline_x_offset or 0.0))
+                right_indent = 0.0
+                if max_width is not None:
+                    # ReportLab usable width = frameWidth - leftIndent - rightIndent.
+                    # max_width is the outline width measured from its x offset, so the
+                    # right indent must account for the left offset; otherwise the usable
+                    # width becomes (max_width - base_left - ...), causing per-character wraps.
+                    right_indent = max(0.0, self._available_width() - base_left - max_width)
                 indented_style = ParagraphStyle(
                     f'Indented{indent_level}',
                     parent=body_style,
-                    leftIndent=indent,
+                    leftIndent=base_left + indent,
+                    rightIndent=right_indent,
                 )
-                story.append(Paragraph(text, indented_style))
+
+                # Prevent line/item overlap when RichText uses large inline font sizes.
+                max_fs = self._max_font_size_pt(element)
+                indented_style.autoLeading = 'max'
+                indented_style.leading = max(float(getattr(indented_style, 'leading', 0.0) or 0.0), max_fs * 1.2)
+                rt_tags = self._dedupe_tags(list(getattr(element, "tags", None) or []))
+                if self.options.include_tags and rt_tags:
+                    marker_font = self.options.default_font_name
+                    marker_size = float(self.options.default_font_size)
+                    prefix_w = self._prefix_width(rt_tags, None, marker_font, marker_size)
+                    style2 = ParagraphStyle(
+                        f'TagPrefixedTop{indent_level}',
+                        parent=indented_style,
+                        leftIndent=base_left + indent + (prefix_w + 6.0),
+                    )
+                    para = Paragraph(text, style2)
+                    story.append(
+                        _prefixed_paragraph_flowable(
+                            para,
+                            prefix_x=base_left + indent,
+                            tags=rt_tags,
+                            marker=None,
+                            marker_font=marker_font,
+                            marker_size=marker_size,
+                            icon_size=float(self.options.tag_icon_size),
+                            icon_gap=float(self.options.tag_icon_gap),
+                            draw_tag_icon=self._draw_tag_icon,
+                        )
+                    )
+                else:
+                    story.append(Paragraph(text, indented_style))
         elif isinstance(element, Image):
-            self._render_image(element, story, styles)
+            self._render_image(element, story, styles, max_width=max_width)
         elif isinstance(element, Table):
-            self._render_table(element, story, styles, body_style)
+            self._render_table(element, story, styles, body_style, max_width=max_width)
         elif isinstance(element, AttachedFile):
             self._render_attached_file(element, story, styles, body_style)
     
@@ -437,7 +558,10 @@ class PdfExporter:
         outline: "Outline", 
         story: list, 
         styles, 
-        body_style
+        body_style,
+        *,
+        outline_x_offset: float = 0.0,
+        max_width: float | None = None,
     ) -> None:
         """Render an outline container."""
         from reportlab.platypus import Spacer
@@ -445,7 +569,16 @@ class PdfExporter:
         list_state = _ListState()
         
         for child in outline.children:
-            self._render_outline_element(child, story, styles, body_style, indent_level=0, list_state=list_state)
+            self._render_outline_element(
+                child,
+                story,
+                styles,
+                body_style,
+                indent_level=0,
+                list_state=list_state,
+                outline_x_offset=outline_x_offset,
+                max_width=max_width,
+            )
         
         story.append(Spacer(1, 6))
     
@@ -457,6 +590,9 @@ class PdfExporter:
         body_style,
         indent_level: int = 0,
         list_state: "_ListState | None" = None,
+        *,
+        outline_x_offset: float = 0.0,
+        max_width: float | None = None,
     ) -> None:
         """Render an outline element (paragraph-like container)."""
         from reportlab.platypus import Paragraph, Spacer, ListFlowable, ListItem
@@ -464,56 +600,136 @@ class PdfExporter:
         
         # Calculate indentation
         indent = 20 * indent_level
+        base_left = max(0.0, float(outline_x_offset or 0.0))
         
         # Determine list marker (and sanitize MS-ONE control bytes).
         bullet_text: str | None = None
         if list_state is not None:
             bullet_text = list_state.next_bullet(elem, indent_level)
 
-        # Styles: use a dedicated bullet indent so multi-line items align.
-        # Reserve enough space for markers like "* ? 12." or "* [] ? @ music cal a.".
-        # ReportLab core fonts don't provide precise glyph metrics here, so use a simple heuristic.
-        bullet_gap = 0
+        # Compute prefix width (tag icons + list marker), so wrapped lines align.
+        # OneNote-like layout: tag icons should appear before the list marker.
+        marker_font = self.options.default_font_name
+        marker_size = float(self.options.default_font_size)
+        prefix_tags: list["NoteTag"] = []
+        if self.options.include_tags and bullet_text:
+            try:
+                if getattr(elem, "tags", None):
+                    prefix_tags.extend(list(elem.tags))
+                for rt in elem.iter_text():
+                    if getattr(rt, "tags", None):
+                        prefix_tags.extend(list(rt.tags))
+                        break
+            except Exception:
+                pass
+        prefix_tags = self._dedupe_tags(prefix_tags)
+        bullet_gap = 0.0
         if bullet_text:
-            bullet_gap = max(18, min(80, 6 + (len(bullet_text) * 4)))
+            bullet_gap = self._prefix_width(prefix_tags, bullet_text, marker_font, marker_size)
+            if bullet_gap:
+                bullet_gap += 6.0
+
+        right_indent = 0.0
+        if max_width is not None:
+            # See comment in _render_element(RichText): max_width is measured from outline_x_offset.
+            right_indent = max(0.0, self._available_width() - base_left - max_width)
         indented_style = ParagraphStyle(
             f'Indented{indent_level}',
             parent=body_style,
-            leftIndent=indent + bullet_gap,
-            bulletIndent=indent,
+            leftIndent=base_left + indent + bullet_gap,
+            rightIndent=right_indent,
         )
+        indented_style.autoLeading = 'max'
         
         # Render contents
         bullet_used = False
-        tags_rendered_in_bullet = bool(bullet_text and self.options.include_tags)
         for content in elem.contents:
             if hasattr(content, '__class__'):
                 from .elements import RichText, Image, Table
                 
                 if isinstance(content, RichText):
-                    text = self._format_rich_text(
-                        content,
-                        prefix="",
-                        include_tag_prefix=(self.options.include_tags and not tags_rendered_in_bullet and not bullet_used),
-                    )
+                    text = self._format_rich_text(content, prefix="")
                     if text.strip():
+                        # Scale leading for this paragraph based on the largest inline font.
+                        max_fs_rt = self._max_font_size_pt(content)
+                        para_style = ParagraphStyle(
+                            f'{indented_style.name}FS{int(max_fs_rt)}',
+                            parent=indented_style,
+                            leading=max(float(getattr(indented_style, 'leading', 0.0) or 0.0), max_fs_rt * 1.2),
+                            autoLeading='max',
+                        )
                         if not bullet_used and bullet_text:
-                            story.append(Paragraph(text, indented_style, bulletText=bullet_text))
+                            para = Paragraph(text, para_style)
+                            story.append(
+                                _prefixed_paragraph_flowable(
+                                    para,
+                                    prefix_x=base_left + indent,
+                                    tags=prefix_tags,
+                                    marker=bullet_text,
+                                    marker_font=marker_font,
+                                    marker_size=marker_size,
+                                    icon_size=float(self.options.tag_icon_size),
+                                    icon_gap=float(self.options.tag_icon_gap),
+                                    draw_tag_icon=self._draw_tag_icon,
+                                )
+                            )
                             bullet_used = True
                         else:
-                            story.append(Paragraph(text, indented_style))
+                            # Non-list paragraph: draw tags as an icon prefix before the text.
+                            rt_tags = self._dedupe_tags(list(getattr(content, "tags", None) or []))
+                            if self.options.include_tags and rt_tags and not bullet_text:
+                                prefix_w2 = self._prefix_width(rt_tags, None, marker_font, marker_size)
+                                style2 = ParagraphStyle(
+                                    f'TagPrefixed{indent_level}',
+                                    parent=para_style,
+                                    leftIndent=base_left + indent + (prefix_w2 + 6.0),
+                                )
+                                para2 = Paragraph(text, style2)
+                                story.append(
+                                    _prefixed_paragraph_flowable(
+                                        para2,
+                                        prefix_x=base_left + indent,
+                                        tags=rt_tags,
+                                        marker=None,
+                                        marker_font=marker_font,
+                                        marker_size=marker_size,
+                                        icon_size=float(self.options.tag_icon_size),
+                                        icon_gap=float(self.options.tag_icon_gap),
+                                        draw_tag_icon=self._draw_tag_icon,
+                                    )
+                                )
+                            else:
+                                story.append(Paragraph(text, para_style))
                 elif isinstance(content, Image):
-                    self._render_image(content, story, styles)
+                    self._render_image(content, story, styles, max_width=max_width)
                 elif isinstance(content, Table):
-                    self._render_table(content, story, styles, body_style)
+                    self._render_table(content, story, styles, body_style, max_width=max_width)
                 else:
-                    self._render_element(content, story, styles, body_style, indent_level, list_state=list_state)
+                    self._render_element(
+                        content,
+                        story,
+                        styles,
+                        body_style,
+                        indent_level,
+                        list_state=list_state,
+                        outline_x_offset=outline_x_offset,
+                        max_width=max_width,
+                    )
         
         # Render nested children
         for child in elem.children:
-            self._render_element(child, story, styles, body_style, indent_level + 1, list_state=list_state)
+            self._render_element(
+                child,
+                story,
+                styles,
+                body_style,
+                indent_level + 1,
+                list_state=list_state,
+                outline_x_offset=outline_x_offset,
+                max_width=max_width,
+            )
     
-    def _format_rich_text(self, rt: "RichText", prefix: str = "", *, include_tag_prefix: bool = True) -> str:
+    def _format_rich_text(self, rt: "RichText", prefix: str = "") -> str:
         """Format rich text with HTML tags for ReportLab."""
         if not rt.text:
             return prefix
@@ -544,12 +760,6 @@ class PdfExporter:
             text = "".join(formatted_parts)
         else:
             text = self._escape_html(text)
-        
-        # Handle tags on the rich text
-        if include_tag_prefix and self.options.include_tags and rt.tags:
-            tag_prefix = self._format_tags(rt.tags, rich=True)
-            if tag_prefix:
-                text = tag_prefix + " " + text
         
         return prefix + text
     
@@ -595,59 +805,249 @@ class PdfExporter:
             result = f'<a href="{self._escape_html(style.hyperlink)}">{result}</a>'
         
         return result
-    
-    def _format_tags(self, tags: list["NoteTag"], *, rich: bool) -> str:
-        """Format note tags as icon-like prefixes.
 
-        ReportLab core fonts are not fully Unicode-capable, so we prefer ASCII
-        markers that render consistently in PDF viewers.
+    def _max_font_size_pt(self, rt: "RichText") -> float:
+        """Return the maximum font size (pt) used by a RichText.
+
+        ReportLab Paragraph does not automatically increase line leading when inline
+        <font size="..."> is used, so we compute a per-paragraph leading.
         """
-        if not tags:
-            return ""
-
-        # Common MS-ONE tag shapes observed in fixtures.
-        # Keep to ASCII so it works with ReportLab core fonts.
-        shape_map: dict[int, tuple[str, str]] = {
-            13: ("*", "#f39c12"),  # Important
-            15: ("?", "#8e44ad"),  # Question
-            3: ("[]", "#2980b9"),  # To-do
-            12: ("cal", "#16a085"),  # Meeting
-            118: ("@", "#2980b9"),  # Contact
-            121: ("music", "#7f8c8d"),  # Music
-        }
-
-        parts: list[str] = []
-        for tag in tags:
-            icon = None
-            color = None
-            if tag.shape is not None and tag.shape in shape_map:
-                icon, color = shape_map[tag.shape]
-            if icon is None:
-                # Fallback: show label (if any), otherwise the raw shape id.
-                if tag.label:
-                    icon = f"[{self._escape_html(tag.label)}]" if rich else f"[{tag.label}]"
-                elif tag.shape is not None:
-                    icon = f"[Tag:{tag.shape}]"
-                else:
-                    continue
-
-            if rich and color and not icon.startswith("["):
-                parts.append(f'<font color="{color}"><b>{self._escape_html(icon)}</b></font>')
-            else:
-                parts.append(icon)
-
-        return " ".join(parts)
+        max_size = float(self.options.default_font_size)
+        try:
+            runs = getattr(rt, "runs", None) or []
+            for run in runs:
+                st = getattr(run, "style", None)
+                fs = getattr(st, "font_size_pt", None) if st is not None else None
+                if fs:
+                    max_size = max(max_size, float(fs))
+        except Exception:
+            pass
+        return max_size
     
-    def _render_image(self, img: "Image", story: list, styles) -> None:
+    def _dedupe_tags(self, tags: list["NoteTag"]) -> list["NoteTag"]:
+        if not tags:
+            return []
+        seen: set[tuple[int | None, str | None]] = set()
+        deduped: list["NoteTag"] = []
+        for t in tags:
+            key = (getattr(t, "shape", None), getattr(t, "label", None))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(t)
+        return deduped
+
+    def _slugify_label(self, s: str) -> str:
+        s = (s or "").strip().lower()
+        out: list[str] = []
+        for ch in s:
+            if ch.isalnum():
+                out.append(ch)
+            elif ch in {" ", "-", "_"}:
+                out.append("_")
+        slug = "".join(out)
+        while "__" in slug:
+            slug = slug.replace("__", "_")
+        return slug.strip("_")
+
+    def _resolve_tag_icon_path(self, tag: "NoteTag") -> Path | None:
+        base = self.options.tag_icon_dir
+        if not base:
+            return None
+        try:
+            base_path = Path(base)
+        except Exception:
+            return None
+
+        candidates: list[Path] = []
+        shape = getattr(tag, "shape", None)
+        if shape is not None:
+            candidates.append(base_path / f"shape_{int(shape)}.png")
+        if getattr(tag, "label", None):
+            slug = self._slugify_label(tag.label or "")
+            if slug:
+                candidates.append(base_path / f"label_{slug}.png")
+
+        for p in candidates:
+            if p.exists() and p.is_file():
+                return p
+        return None
+
+    def _get_tag_icon_image(self, tag: "NoteTag") -> object | None:
+        """Return a cached ReportLab ImageReader for a tag icon path (PNG)."""
+        p = self._resolve_tag_icon_path(tag)
+        if p is None:
+            return None
+        key = str(p)
+        cached = self._tag_icon_image_cache.get(key)
+        if cached is not None:
+            return cached
+        try:
+            from reportlab.lib.utils import ImageReader
+
+            reader = ImageReader(str(p))
+            self._tag_icon_image_cache[key] = reader
+            return reader
+        except Exception:
+            return None
+
+    def _tag_style_for_shape(self, shape: int | None) -> tuple[str, str]:
+        """(kind, color_hex) for known tag shapes."""
+        if shape == 13:
+            return ("star", "#f39c12")
+        if shape == 15:
+            return ("question", "#8e44ad")
+        if shape == 3:
+            return ("todo", "#2980b9")
+        if shape == 12:
+            return ("calendar", "#16a085")
+        if shape == 118:
+            return ("contact", "#2980b9")
+        if shape == 121:
+            return ("music", "#7f8c8d")
+        return ("unknown", "#7f8c8d")
+
+    def _estimate_text_width(self, text: str, font_name: str, font_size: float) -> float:
+        if not text:
+            return 0.0
+        try:
+            from reportlab.pdfbase.pdfmetrics import stringWidth
+
+            return float(stringWidth(text, font_name, font_size))
+        except Exception:
+            return float(len(text)) * float(font_size) * 0.55
+
+    def _prefix_width(self, tags: list["NoteTag"], marker: str | None, font_name: str, font_size: float) -> float:
+        icon_size = float(self.options.tag_icon_size)
+        icon_gap = float(self.options.tag_icon_gap)
+        tags = self._dedupe_tags(tags)
+        icon_w = 0.0
+        if tags:
+            icon_w = len(tags) * icon_size + max(0, len(tags) - 1) * icon_gap
+        marker_w = self._estimate_text_width(marker or "", font_name, font_size)
+        gap = 4.0 if (tags and marker) else (3.0 if (tags or marker) else 0.0)
+        return icon_w + gap + marker_w
+
+    def _draw_tag_icon(self, canv, tag: "NoteTag", x: float, y: float, size: float) -> None:
+        """Draw a tag icon at (x, y) with a size (points)."""
+        img = self._get_tag_icon_image(tag)
+        if img is not None:
+            try:
+                canv.drawImage(img, x, y, width=size, height=size, mask='auto', preserveAspectRatio=True)
+                return
+            except Exception:
+                pass
+
+        from reportlab.lib import colors
+
+        kind, color_hex = self._tag_style_for_shape(getattr(tag, "shape", None))
+        fill = colors.HexColor(color_hex)
+
+        def draw_star() -> None:
+            import math
+
+            cx = x + size / 2
+            cy = y + size / 2
+            r_outer = size * 0.48
+            r_inner = size * 0.22
+            pts = []
+            for i in range(10):
+                a = math.pi / 2 + i * (math.pi / 5)
+                r = r_outer if i % 2 == 0 else r_inner
+                pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+            p = canv.beginPath()
+            p.moveTo(*pts[0])
+            for px, py in pts[1:]:
+                p.lineTo(px, py)
+            p.close()
+            canv.setFillColor(fill)
+            canv.setStrokeColor(fill)
+            canv.drawPath(p, stroke=1, fill=1)
+
+        def draw_checkbox() -> None:
+            canv.setStrokeColor(fill)
+            canv.setFillColor(colors.white)
+            canv.rect(x + 0.5, y + 0.5, size - 1.0, size - 1.0, stroke=1, fill=1)
+            canv.setStrokeColor(fill)
+            canv.setLineWidth(max(1.0, size * 0.12))
+            canv.line(x + size * 0.22, y + size * 0.52, x + size * 0.42, y + size * 0.30)
+            canv.line(x + size * 0.42, y + size * 0.30, x + size * 0.78, y + size * 0.72)
+
+        def draw_calendar() -> None:
+            canv.setStrokeColor(fill)
+            canv.setFillColor(colors.white)
+            canv.rect(x + 0.5, y + 0.5, size - 1.0, size - 1.0, stroke=1, fill=1)
+            canv.setFillColor(fill)
+            header_h = size * 0.26
+            canv.rect(x + 0.5, y + size - header_h - 0.5, size - 1.0, header_h, stroke=0, fill=1)
+            canv.setFillColor(colors.white)
+            dot_r = max(0.8, size * 0.05)
+            canv.circle(x + size * 0.28, y + size - header_h / 2, dot_r, stroke=0, fill=1)
+            canv.circle(x + size * 0.72, y + size - header_h / 2, dot_r, stroke=0, fill=1)
+
+        def draw_text_glyph(glyph: str) -> None:
+            canv.setFillColor(fill)
+            canv.setStrokeColor(fill)
+            canv.setLineWidth(1)
+            canv.circle(x + size / 2, y + size / 2, size * 0.48, stroke=1, fill=0)
+            fsize = max(6.0, size * 0.78)
+            canv.setFont("Helvetica-Bold", fsize)
+            w = self._estimate_text_width(glyph, "Helvetica-Bold", fsize)
+            canv.drawString(x + (size - w) / 2, y + size * 0.10, glyph)
+
+        def draw_music() -> None:
+            canv.setStrokeColor(fill)
+            canv.setFillColor(fill)
+            lw = max(1.0, size * 0.10)
+            canv.setLineWidth(lw)
+            canv.line(x + size * 0.62, y + size * 0.20, x + size * 0.62, y + size * 0.82)
+            canv.line(x + size * 0.62, y + size * 0.82, x + size * 0.80, y + size * 0.76)
+            canv.circle(x + size * 0.45, y + size * 0.24, size * 0.16, stroke=1, fill=1)
+
+        if kind == "star":
+            draw_star()
+        elif kind == "todo":
+            draw_checkbox()
+        elif kind == "calendar":
+            draw_calendar()
+        elif kind == "question":
+            draw_text_glyph("?")
+        elif kind == "contact":
+            draw_text_glyph("@")
+        elif kind == "music":
+            draw_music()
+        else:
+            canv.setStrokeColor(fill)
+            canv.setFillColor(colors.white)
+            canv.rect(x + 0.5, y + 0.5, size - 1.0, size - 1.0, stroke=1, fill=1)
+    
+    def _render_image(self, img: "Image", story: list, styles, *, max_width: float | None = None) -> None:
         """Render an image to PDF."""
         from reportlab.platypus import Paragraph, Spacer
         
         if not self.options.include_images:
             return
         
-        rl_img = self._build_rl_image(img, styles, max_width=self._available_width(), max_height=self.options.image_max_height)
+        effective_max_width = self._available_width()
+        if max_width is not None:
+            effective_max_width = min(effective_max_width, max_width)
+        rl_img = self._build_rl_image(img, styles, max_width=effective_max_width, max_height=self.options.image_max_height)
         if rl_img is None:
             return
+
+        if self.options.include_tags and getattr(img, "tags", None):
+            tags = self._dedupe_tags(list(img.tags))
+            if tags:
+                story.append(
+                    _icon_only_flowable(
+                        tags=tags,
+                        height=float(self.options.tag_icon_size) + 2.0,
+                        prefix_x=0.0,
+                        icon_size=float(self.options.tag_icon_size),
+                        icon_gap=float(self.options.tag_icon_gap),
+                        draw_tag_icon=self._draw_tag_icon,
+                    )
+                )
         story.append(rl_img)
         story.append(Spacer(1, 6))
 
@@ -708,7 +1108,9 @@ class PdfExporter:
         table: "Table", 
         story: list, 
         styles, 
-        body_style
+        body_style,
+        *,
+        max_width: float | None = None,
     ) -> None:
         """Render a table to PDF."""
         from reportlab.platypus import Table as RLTable, TableStyle, Paragraph, Spacer
@@ -725,6 +1127,8 @@ class PdfExporter:
                 col_widths = valid_widths
 
         available_width = self._available_width()
+        if max_width is not None:
+            available_width = min(available_width, max_width)
         approx_col_width = None
         if table.column_count:
             approx_col_width = available_width / table.column_count
@@ -773,11 +1177,20 @@ class PdfExporter:
         
         rl_table.setStyle(TableStyle(style_commands))
         
-        # Render table tags if present
+        # Render table tags (icons) if present
         if self.options.include_tags and table.tags:
-            tag_text = self._format_tags(table.tags, rich=True)
-            if tag_text:
-                story.append(Paragraph(tag_text, body_style))
+            tags = self._dedupe_tags(list(table.tags))
+            if tags:
+                story.append(
+                    _icon_only_flowable(
+                        tags=tags,
+                        height=float(self.options.tag_icon_size) + 2.0,
+                        prefix_x=0.0,
+                        icon_size=float(self.options.tag_icon_size),
+                        icon_gap=float(self.options.tag_icon_gap),
+                        draw_tag_icon=self._draw_tag_icon,
+                    )
+                )
         
         story.append(rl_table)
         story.append(Spacer(1, 12))
@@ -796,7 +1209,34 @@ class PdfExporter:
             if isinstance(elem, RichText):
                 text = self._format_rich_text(elem)
                 if text.strip():
-                    flowables.append(Paragraph(text, body_style))
+                    rt_tags = self._dedupe_tags(list(getattr(elem, "tags", None) or []))
+                    if self.options.include_tags and rt_tags:
+                        from reportlab.lib.styles import ParagraphStyle
+
+                        marker_font = self.options.default_font_name
+                        marker_size = float(self.options.default_font_size)
+                        prefix_w = self._prefix_width(rt_tags, None, marker_font, marker_size)
+                        style2 = ParagraphStyle(
+                            'CellTagPrefixed',
+                            parent=body_style,
+                            leftIndent=(prefix_w + 6.0),
+                        )
+                        para = Paragraph(text, style2)
+                        flowables.append(
+                            _prefixed_paragraph_flowable(
+                                para,
+                                prefix_x=0.0,
+                                tags=rt_tags,
+                                marker=None,
+                                marker_font=marker_font,
+                                marker_size=marker_size,
+                                icon_size=float(self.options.tag_icon_size),
+                                icon_gap=float(self.options.tag_icon_gap),
+                                draw_tag_icon=self._draw_tag_icon,
+                            )
+                        )
+                    else:
+                        flowables.append(Paragraph(text, body_style))
             elif isinstance(elem, Image):
                 img_flow = self._build_rl_image(elem, styles, max_width=max_width, max_height=self.options.image_max_height)
                 if img_flow is not None:
@@ -835,6 +1275,20 @@ class PdfExporter:
         """Render an attached file reference."""
         from reportlab.platypus import Paragraph, Spacer
         
+        if self.options.include_tags and getattr(attachment, "tags", None):
+            tags = self._dedupe_tags(list(attachment.tags))
+            if tags:
+                story.append(
+                    _icon_only_flowable(
+                        tags=tags,
+                        height=float(self.options.tag_icon_size) + 2.0,
+                        prefix_x=0.0,
+                        icon_size=float(self.options.tag_icon_size),
+                        icon_gap=float(self.options.tag_icon_gap),
+                        draw_tag_icon=self._draw_tag_icon,
+                    )
+                )
+
         filename = attachment.filename or "unknown"
         size_kb = attachment.size / 1024 if attachment.size else 0
         
@@ -911,3 +1365,167 @@ def export_pdf(
     """
     exporter = PdfExporter(options)
     exporter.export(document, output)
+
+
+def _prefixed_paragraph_flowable(
+    paragraph,
+    *,
+    prefix_x: float,
+    tags: list["NoteTag"],
+    marker: str | None,
+    marker_font: str,
+    marker_size: float,
+    icon_size: float,
+    icon_gap: float,
+    draw_tag_icon,
+):
+    """Factory: returns a real ReportLab Flowable that draws prefix + Paragraph."""
+    from reportlab.platypus import Flowable
+    from reportlab.lib import colors
+
+    class _Impl(Flowable):
+        def __init__(self) -> None:
+            super().__init__()
+            self.paragraph = paragraph
+            self.prefix_x = float(prefix_x)
+            self.tags = list(tags)
+            self.marker = marker
+            self.marker_font = marker_font
+            self.marker_size = float(marker_size)
+            self.icon_size = float(icon_size)
+            self.icon_gap = float(icon_gap)
+            self.draw_tag_icon = draw_tag_icon
+            self._w = 0.0
+            self._h = 0.0
+
+        def getSpaceBefore(self):
+            return self.paragraph.getSpaceBefore()
+
+        def getSpaceAfter(self):
+            return self.paragraph.getSpaceAfter()
+
+        def split(self, aW, aH):
+            parts = self.paragraph.split(aW, aH)
+            if not parts:
+                return []
+            out = []
+            for i, p in enumerate(parts):
+                out.append(
+                    _prefixed_paragraph_flowable(
+                        p,
+                        prefix_x=self.prefix_x,
+                        tags=(self.tags if i == 0 else []),
+                        marker=(self.marker if i == 0 else None),
+                        marker_font=self.marker_font,
+                        marker_size=self.marker_size,
+                        icon_size=self.icon_size,
+                        icon_gap=self.icon_gap,
+                        draw_tag_icon=self.draw_tag_icon,
+                    )
+                )
+            return out
+
+        def wrap(self, aW, aH):
+            w, h = self.paragraph.wrap(aW, aH)
+            self._w, self._h = w, h
+            return w, h
+
+        def draw(self):
+            canv = self.canv
+            # ReportLab Paragraph draws text starting near the *top* of its box.
+            # In the PDF stream this often manifests as a negative Tm Y (e.g. -13)
+            # when fontSize > leading. To align our marker/icons with the paragraph's
+            # first line, compute baseline from the wrapped height.
+            style = self.paragraph.style
+            line_font_size = None
+            frag_font_size = None
+            try:
+                bl_para = getattr(self.paragraph, "blPara", None)
+                if bl_para is not None:
+                    lines = getattr(bl_para, "lines", None)
+                    if lines:
+                        line_font_size = getattr(lines[0], "fontSize", None)
+                frags = getattr(self.paragraph, "frags", None)
+                if frags:
+                    frag_font_size = getattr(frags[0], "fontSize", None)
+            except Exception:
+                line_font_size = None
+                frag_font_size = None
+
+            font_size = float(
+                line_font_size
+                or frag_font_size
+                or getattr(style, "fontSize", None)
+                or self.marker_size
+            )
+            leading = float(getattr(style, "leading", None) or (font_size * 1.2))
+            baseline_y = leading - font_size
+
+            # Center icons on the first line box using font ascent/descent if possible.
+            try:
+                from reportlab.pdfbase import pdfmetrics
+
+                font_name = str(getattr(style, "fontName", "Helvetica") or "Helvetica")
+                ascent = (pdfmetrics.getAscent(font_name) / 1000.0) * font_size
+                descent = (pdfmetrics.getDescent(font_name) / 1000.0) * font_size
+            except Exception:
+                ascent = 0.7 * font_size
+                descent = -0.2 * font_size
+
+            line_top = baseline_y + ascent
+            line_bottom = baseline_y + descent
+            icon_y = line_bottom + ((line_top - line_bottom) - self.icon_size) / 2.0
+
+            cur_x = float(self.prefix_x)
+            for t in self.tags:
+                self.draw_tag_icon(canv, t, cur_x, icon_y, self.icon_size)
+                cur_x += self.icon_size + self.icon_gap
+
+            if self.marker:
+                if self.tags:
+                    cur_x += 4.0
+                canv.setFillColor(colors.black)
+                try:
+                    canv.setFont(self.marker_font, self.marker_size)
+                except Exception:
+                    canv.setFont("Helvetica", self.marker_size)
+                canv.drawString(cur_x, baseline_y, self.marker)
+
+            self.paragraph.drawOn(canv, 0, 0)
+
+    return _Impl()
+
+
+def _icon_only_flowable(
+    *,
+    tags: list["NoteTag"],
+    height: float,
+    prefix_x: float,
+    icon_size: float,
+    icon_gap: float,
+    draw_tag_icon,
+):
+    from reportlab.platypus import Flowable
+
+    class _Impl(Flowable):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tags = list(tags)
+            self.height = float(height)
+            self.prefix_x = float(prefix_x)
+            self.icon_size = float(icon_size)
+            self.icon_gap = float(icon_gap)
+            self.draw_tag_icon = draw_tag_icon
+
+        def wrap(self, aW, aH):
+            return (aW, self.height)
+
+        def draw(self):
+            canv = self.canv
+            icon_y = (self.height - self.icon_size) / 2
+            cur_x = float(self.prefix_x)
+            for t in self.tags:
+                self.draw_tag_icon(canv, t, cur_x, icon_y, self.icon_size)
+                cur_x += self.icon_size + self.icon_gap
+
+    return _Impl()

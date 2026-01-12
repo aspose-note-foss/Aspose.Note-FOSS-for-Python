@@ -26,7 +26,7 @@ class Page(BaseNode):
     # Newest-to-oldest snapshots of this page in previous revisions.
     # Empty by default; populated by ms_one.reader.parse_section_file_with_page_history.
     history: tuple["Page", ...] = ()
-    # Layout properties (all floats in half-points unless otherwise noted)
+    # Layout properties (float inches)
     page_width: float | None = None
     page_height: float | None = None
 
@@ -39,7 +39,7 @@ class Title(BaseNode):
 @dataclass(frozen=True, slots=True)
 class Outline(BaseNode):
     children: tuple[BaseNode, ...]
-    # Layout properties (float in half-points)
+    # Layout properties (float in inches)
     offset_horizontal: float | None = None
     offset_vertical: float | None = None
     layout_max_width: float | None = None

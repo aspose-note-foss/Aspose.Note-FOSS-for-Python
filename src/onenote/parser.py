@@ -440,9 +440,10 @@ def _convert_page(
             else:
                 children.append(converted)
 
-    # Convert page dimensions (half-points to points)
-    page_width = page.page_width / 2.0 if page.page_width is not None else None
-    page_height = page.page_height / 2.0 if page.page_height is not None else None
+    # Convert page dimensions to points.
+    # MS-ONE PageWidth/PageHeight are stored as floats in inches.
+    page_width = page.page_width * 72.0 if page.page_width is not None else None
+    page_height = page.page_height * 72.0 if page.page_height is not None else None
 
     return Page(
         _oid=page.oid.guid if page.oid else b"",
@@ -546,10 +547,12 @@ def _convert_outline(
                 )
             )
 
-    # Convert layout offsets (half-points to points)
-    x = outline.offset_horizontal / 2.0 if outline.offset_horizontal is not None else None
-    y = outline.offset_vertical / 2.0 if outline.offset_vertical is not None else None
-    width = outline.layout_max_width / 2.0 if outline.layout_max_width is not None else None
+    # Convert layout offsets to points.
+    # MS-ONE: OffsetFromParentHoriz/Vert and LayoutMaxWidth are stored as floats in inches.
+    # PDF/reportlab use points (1 inch = 72 points).
+    x = outline.offset_horizontal * 72.0 if outline.offset_horizontal is not None else None
+    y = outline.offset_vertical * 72.0 if outline.offset_vertical is not None else None
+    width = outline.layout_max_width * 72.0 if outline.layout_max_width is not None else None
 
     return Outline(
         _oid=outline.oid.guid if outline.oid else b"",

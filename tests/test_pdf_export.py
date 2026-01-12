@@ -183,11 +183,12 @@ class TestPdfExportNumberedListWithTags(unittest.TestCase):
         self.assertEqual(_compute_list_marker(fmt_roman, 1), "i.")
         self.assertEqual(_compute_list_marker(fmt_roman, 2), "ii.")
 
-        # Bullet text should include tag markers (ASCII) for this fixture.
+        # Bullet text should not include tag markers (tags are drawn as icons).
         ls = _ListState()
         b0 = ls.next_bullet(outlines[0].children[0], 0) or ""
         self.assertIn("1.", b0)
-        self.assertIn("*", b0)  # Important tag
+        # Tags are rendered as drawn icons now, not ASCII markers.
+        self.assertNotIn("*", b0)
 
 
 @unittest.skipUnless(HAS_REPORTLAB, "reportlab not installed")

@@ -27,6 +27,18 @@ class PdfSaveOptions(SaveOptions):
     PageIndex: int = 0  # noqa: N815
     PageCount: int | None = None  # noqa: N815
 
+    TagIconDir: str | None = None  # noqa: N815
+    """Optional directory containing custom tag icons (PNG).
+
+    See `onenote.pdf_export.PdfExportOptions.tag_icon_dir` for naming rules.
+    """
+
+    TagIconSize: float | None = None  # noqa: N815
+    """Override tag icon size in points."""
+
+    TagIconGap: float | None = None  # noqa: N815
+    """Override horizontal gap between tag icons in points."""
+
 
 @dataclass
 class HtmlSaveOptions(SaveOptions):
