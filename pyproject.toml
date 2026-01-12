@@ -8,12 +8,37 @@ version = "0.1.0"
 description = "Aspose.Note-compatible Python API for reading OneNote (.one) files"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Proprietary"}
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE"]
 authors = [{name = "Aspose"}]
+
+keywords = ["onenote", "one", "aspose", "parser", "pdf"]
+
+classifiers = [
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3 :: Only",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+	"Operating System :: OS Independent",
+	"Topic :: File Formats",
+]
+
+dependencies = []
+
+[project.optional-dependencies]
+pdf = ["reportlab>=3.6"]
+dev = ["build>=1.2", "twine>=5.0"]
+
+[project.urls]
+Homepage = "https://github.com/aspose" 
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
+[tool.setuptools.package-data]
+# If you later add non-.py resources, declare them here.
+
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["aspose*"]
+include = ["aspose*", "onenote*", "onestore*", "ms_one*"]

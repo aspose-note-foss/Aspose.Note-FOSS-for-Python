@@ -14,6 +14,39 @@ print(doc.DisplayName)
 print(doc.Count())
 ```
 
+## Installation
+
+From a local checkout:
+
+```bash
+python -m pip install -e .
+```
+
+PDF export uses ReportLab:
+
+```bash
+python -m pip install -e ".[pdf]"
+```
+
+## Publish to PyPI
+
+1) Pick a unique distribution name (PyPI may already have `aspose-note`).
+
+2) Build distributions:
+
+```bash
+python -m pip install -U build
+python -m build
+```
+
+3) Upload (use TestPyPI first):
+
+```bash
+python -m pip install -U twine
+python -m twine upload --repository testpypi dist/*
+python -m twine upload dist/*
+```
+
 ## Notes
 
 - Other modules in this repository (including parsing internals) are implementation details and are not part of the supported public API surface.
