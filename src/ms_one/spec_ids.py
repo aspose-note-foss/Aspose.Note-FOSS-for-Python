@@ -68,6 +68,34 @@ PID_HIGHLIGHT = 0x14001C0D  # Highlight COLORREF (u32)
 PID_HYPERLINK = 0x08001E14
 PID_WZ_HYPERLINK_URL = 0x1C001E20  # WzHyperlinkUrl (WzInAtom)
 
+# Layout properties
+PID_PAGE_WIDTH = 0x14001C01  # PageWidth (float)
+PID_PAGE_HEIGHT = 0x14001C02  # PageHeight (float)
+PID_OFFSET_FROM_PARENT_HORIZ = 0x14001C14  # OffsetFromParentHoriz (float)
+PID_OFFSET_FROM_PARENT_VERT = 0x14001C15  # OffsetFromParentVert (float)
+PID_LAYOUT_MAX_WIDTH = 0x14001C1B  # LayoutMaxWidth (float)
+PID_LAYOUT_MAX_HEIGHT = 0x14001C1C  # LayoutMaxHeight (float)
+PID_LAYOUT_ALIGNMENT_IN_PARENT = 0x14001C3E  # LayoutAlignmentInParent (u32)
+PID_LAYOUT_ALIGNMENT_SELF = 0x14001C84  # LayoutAlignmentSelf (u32)
+PID_PICTURE_WIDTH = 0x140034CD  # PictureWidth (float, half-inch increments)
+PID_PICTURE_HEIGHT = 0x140034CE  # PictureHeight (float, half-inch increments)
+PID_IMAGE_ALT_TEXT = 0x1C001C4A  # ImageAltText (WzInAtom) - estimated from spec
+
+# Table layout properties
+PID_ROW_COUNT = 0x14001D57  # RowCount (u32)
+PID_COLUMN_COUNT = 0x14001D58  # ColumnCount (u32)
+PID_TABLE_COLUMN_WIDTHS = 0x1C001D66  # TableColumnWidths (array of floats)
+PID_TABLE_BORDERS_VISIBLE = 0x08001D5F  # TableBordersVisible (bool)
+
+# Embedded binary container references
+# PictureContainer (MS-ONE 2.2.59) is an ObjectID referencing jcidPictureContainer14 which holds
+# the binary payload for images/embedded objects.
+PID_PICTURE_CONTAINER = 0x20001C3F
+
+# Outline element layout
+PID_OUTLINE_ELEMENT_CHILD_LEVEL = 0x0C001C03  # OutlineElementChildLevel (u8)
+PID_RG_OUTLINE_INDENT_DISTANCE = 0x1C001C12  # RgOutlineIndentDistance (array of floats)
+
 # Embedded objects inside RichText runs
 PID_TEXT_RUN_DATA_OBJECT = 0x24003458  # TextRunDataObject (OID array)
 

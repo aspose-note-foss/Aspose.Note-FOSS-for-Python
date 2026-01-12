@@ -68,6 +68,19 @@ from ..spec_ids import (
     PID_HIGHLIGHT,
     PID_HYPERLINK,
     PID_WZ_HYPERLINK_URL,
+    PID_PAGE_WIDTH,
+    PID_PAGE_HEIGHT,
+    PID_OFFSET_FROM_PARENT_HORIZ,
+    PID_OFFSET_FROM_PARENT_VERT,
+    PID_LAYOUT_MAX_WIDTH,
+    PID_LAYOUT_MAX_HEIGHT,
+    PID_PICTURE_WIDTH,
+    PID_PICTURE_HEIGHT,
+    PID_PICTURE_CONTAINER,
+    PID_ROW_COUNT,
+    PID_COLUMN_COUNT,
+    PID_TABLE_COLUMN_WIDTHS,
+    PID_TABLE_BORDERS_VISIBLE,
  )
 from ..types import decode_text_extended_ascii, decode_wz_in_atom
 
@@ -108,6 +121,48 @@ def _u32_from_bytes(b: bytes | None) -> int | None:
     if b is None or len(b) < 4:
         return None
     return int.from_bytes(b[:4], "little", signed=False)
+
+
+def _float_from_bytes(b: bytes | None) -> float | None:
+    """Parse a 4-byte little-endian float from bytes."""
+    if b is None or len(b) < 4:
+        return None
+    import struct
+    try:
+        return struct.unpack("<f", b[:4])[0]
+    except struct.error:
+        return None
+
+
+def _bool_from_prop(props, pid_raw: int) -> bool | None:
+    """Extract a boolean property."""
+    if props is None:
+        return None
+    p = get_prop(props, pid_raw)
+    if p is None or not isinstance(p.value, bool):
+        return None
+    return bool(p.value)
+
+
+def _decode_table_column_widths(b: bytes | None) -> tuple[float, ...]:
+    """Decode TableColumnWidths: cColumns (u32) + array of floats."""
+    if b is None or len(b) < 4:
+        return ()
+    import struct
+    c_columns = int.from_bytes(b[:4], "little", signed=False)
+    expected_len = 4 + c_columns * 4
+    if len(b) < expected_len:
+        # Best effort: return what we can parse
+        c_columns = (len(b) - 4) // 4
+    widths: list[float] = []
+    for i in range(c_columns):
+        offset = 4 + i * 4
+        try:
+            w = struct.unpack("<f", b[offset:offset + 4])[0]
+            widths.append(w)
+        except struct.error:
+            break
+    return tuple(widths)
 
 
 def _first_font_size_pt_from_text_run_formatting(rec: ObjectRecord, *, state: "ParseState") -> float | None:
@@ -581,6 +636,15 @@ def _extract_file_data_store_guids_from_properties(
 
     keys = set(file_data_store_index.keys())
     matched: set[str] = set(explicit)
+
+    # Some files store the FileDataStore guidReference as an ExtendedGUID scalar
+    # (instead of embedding the raw 16 bytes inside a bytes blob).
+    for v in _iter_property_scalars(props):
+        if isinstance(v, ExtendedGUID) and v.guid in keys:
+            try:
+                matched.add(str(uuid.UUID(bytes_le=bytes(v.guid))))
+            except Exception:
+                continue
     for b in _iter_property_bytes(props):
         if len(b) < 16:
             continue
@@ -764,6 +828,116 @@ def _resolve_file_names_via_references(
     return tuple(sorted(found))
 
 
+_PNG_SIG = b"\x89PNG\r\n\x1a\n"
+
+
+def _extract_image_bytes_from_blob(blob: bytes) -> bytes:
+    """Best-effort extract of image bytes from a container blob.
+
+    PictureContainer payloads frequently include small headers before the actual
+    image bytes. We scan for common image signatures and return the slice starting
+    at the first match.
+    """
+
+    if not blob:
+        return b""
+
+    candidates: list[tuple[int, bytes]] = []
+
+    # PNG
+    i = blob.find(_PNG_SIG)
+    if i >= 0:
+        candidates.append((i, blob[i:]))
+
+    # JPEG
+    i = blob.find(b"\xff\xd8\xff")
+    if i >= 0:
+        candidates.append((i, blob[i:]))
+
+    # GIF
+    for sig in (b"GIF87a", b"GIF89a"):
+        i = blob.find(sig)
+        if i >= 0:
+            candidates.append((i, blob[i:]))
+
+    # BMP
+    i = blob.find(b"BM")
+    if i >= 0:
+        candidates.append((i, blob[i:]))
+
+    # TIFF
+    for sig in (b"II*\x00", b"MM\x00*"):
+        i = blob.find(sig)
+        if i >= 0:
+            candidates.append((i, blob[i:]))
+
+    if not candidates:
+        return b""
+
+    # Prefer earliest signature; if equal, prefer larger remainder.
+    candidates.sort(key=lambda x: (x[0], -len(x[1])))
+    return candidates[0][1]
+
+
+def _resolve_picture_container_payload(
+    record: ObjectRecord,
+    *,
+    state: "ParseState",
+    max_depth: int = 4,
+    max_nodes: int = 200,
+) -> bytes:
+    """Resolve PictureContainer (2.2.59) -> embedded payload bytes (best-effort).
+
+    In some files the PictureContainer node does not hold the image bytes directly,
+    but references additional objects that do. Walk a bounded reference graph and
+    scan reachable property bytes for common image signatures.
+    """
+
+    if record.properties is None:
+        return b""
+
+    root = get_oid(record.properties, PID_PICTURE_CONTAINER)
+    if root is None:
+        return b""
+
+    if isinstance(root, CompactID):
+        root = resolve_compact_id(root, state.gid_table, ctx=state.ctx)
+
+    visited: set[ExtendedGUID] = set()
+    queue: list[tuple[ExtendedGUID, int]] = [(root, 1)]
+
+    best = b""
+    steps = 0
+    while queue and steps < max_nodes:
+        steps += 1
+        oid, depth = queue.pop(0)
+        if oid in visited:
+            continue
+        visited.add(oid)
+
+        rec = state.index.get(oid)
+        if rec is None or rec.properties is None:
+            continue
+
+        for b in _iter_property_bytes(rec.properties):
+            extracted = _extract_image_bytes_from_blob(bytes(b))
+            if extracted and len(extracted) > len(best):
+                best = extracted
+
+        if depth >= max_depth:
+            continue
+
+        for v in _iter_property_scalars(rec.properties):
+            if isinstance(v, ExtendedGUID) and v not in visited:
+                queue.append((v, depth + 1))
+            elif isinstance(v, CompactID):
+                eg = resolve_compact_id(v, state.gid_table, ctx=state.ctx)
+                if eg not in visited:
+                    queue.append((eg, depth + 1))
+
+    return best
+
+
 @dataclass(frozen=True, slots=True)
 class ParseState:
     index: ObjectIndex
@@ -830,7 +1004,18 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
         else:
             children = children_a
         title = _wz_prop(rec, PID_CACHED_TITLE_STRING, state) or _wz_prop(rec, PID_CACHED_TITLE_STRING_FROM_PAGE, state)
-        return Page(oid=oid, jcid_index=jidx, raw_properties=rec.properties, title=title, children=children)
+        # Layout properties
+        page_width = _float_from_bytes(get_bytes(rec.properties, PID_PAGE_WIDTH)) if rec.properties else None
+        page_height = _float_from_bytes(get_bytes(rec.properties, PID_PAGE_HEIGHT)) if rec.properties else None
+        return Page(
+            oid=oid,
+            jcid_index=jidx,
+            raw_properties=rec.properties,
+            title=title,
+            children=children,
+            page_width=page_width,
+            page_height=page_height,
+        )
 
     # Some files (e.g. SimpleTable.one) expose pages via PageMetaData entries referenced from PageSeries.
     # For v1 extraction, treat PageMetaData as a Page leaf (title only).
@@ -890,7 +1075,20 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
                 if extra:
                     children = tuple(list(children) + extra)
 
-        return Outline(oid=oid, jcid_index=jidx, raw_properties=rec.properties, children=children)
+        # Layout properties
+        offset_h = _float_from_bytes(get_bytes(rec.properties, PID_OFFSET_FROM_PARENT_HORIZ)) if rec.properties else None
+        offset_v = _float_from_bytes(get_bytes(rec.properties, PID_OFFSET_FROM_PARENT_VERT)) if rec.properties else None
+        layout_max_w = _float_from_bytes(get_bytes(rec.properties, PID_LAYOUT_MAX_WIDTH)) if rec.properties else None
+
+        return Outline(
+            oid=oid,
+            jcid_index=jidx,
+            raw_properties=rec.properties,
+            children=children,
+            offset_horizontal=offset_h,
+            offset_vertical=offset_v,
+            layout_max_width=layout_max_w,
+        )
 
     if jidx == JCID_OUTLINE_ELEMENT_NODE_INDEX:
         children = _children_from_pid(rec, PID_ELEMENT_CHILD_NODES, state)
@@ -995,7 +1193,16 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
         # Alt text PID_IMAGE_ALT_TEXT exists in spec but not added to spec_ids v1.
         file_data_guids = _resolve_file_data_store_guids_via_references(rec, state=state)
         file_names = _resolve_file_names_via_references(rec, state=state)
+        embedded_data = _resolve_picture_container_payload(rec, state=state)
         tags = _extract_note_tags_from_properties(rec.properties, state=state)
+        # Layout properties
+        offset_h = _float_from_bytes(get_bytes(rec.properties, PID_OFFSET_FROM_PARENT_HORIZ)) if rec.properties else None
+        offset_v = _float_from_bytes(get_bytes(rec.properties, PID_OFFSET_FROM_PARENT_VERT)) if rec.properties else None
+        layout_max_w = _float_from_bytes(get_bytes(rec.properties, PID_LAYOUT_MAX_WIDTH)) if rec.properties else None
+        layout_max_h = _float_from_bytes(get_bytes(rec.properties, PID_LAYOUT_MAX_HEIGHT)) if rec.properties else None
+        pic_w = _float_from_bytes(get_bytes(rec.properties, PID_PICTURE_WIDTH)) if rec.properties else None
+        pic_h = _float_from_bytes(get_bytes(rec.properties, PID_PICTURE_HEIGHT)) if rec.properties else None
+        hyperlink = _wz_prop(rec, PID_WZ_HYPERLINK_URL, state)
         return Image(
             oid=oid,
             jcid_index=jidx,
@@ -1003,12 +1210,21 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
             alt_text=None,
             original_filename=file_names[0] if file_names else None,
             file_data_guids=file_data_guids,
+            data=embedded_data,
             tags=tags,
+            offset_horizontal=offset_h,
+            offset_vertical=offset_v,
+            layout_max_width=layout_max_w,
+            layout_max_height=layout_max_h,
+            picture_width=pic_w,
+            picture_height=pic_h,
+            hyperlink=hyperlink,
         )
 
     if jidx == JCID_EMBEDDED_FILE_NODE_INDEX:
         file_data_guids = _resolve_file_data_store_guids_via_references(rec, state=state)
         file_names = _resolve_file_names_via_references(rec, state=state)
+        embedded_data = _resolve_picture_container_payload(rec, state=state)
         tags = _extract_note_tags_from_properties(rec.properties, state=state)
         return EmbeddedFile(
             oid=oid,
@@ -1016,13 +1232,29 @@ def parse_node(oid: ExtendedGUID, state: ParseState) -> BaseNode:
             raw_properties=rec.properties,
             original_filename=file_names[0] if file_names else None,
             file_data_guids=file_data_guids,
+            data=embedded_data,
             tags=tags,
         )
 
     if jidx == JCID_TABLE_NODE_INDEX:
         children = _children_from_pid(rec, PID_ELEMENT_CHILD_NODES, state)
         tags = _extract_note_tags_from_properties(rec.properties, state=state)
-        return Table(oid=oid, jcid_index=jidx, raw_properties=rec.properties, children=children, tags=tags)
+        # Table layout properties
+        row_count = _u32_from_bytes(get_bytes(rec.properties, PID_ROW_COUNT)) if rec.properties else None
+        col_count = _u32_from_bytes(get_bytes(rec.properties, PID_COLUMN_COUNT)) if rec.properties else None
+        col_widths = _decode_table_column_widths(get_bytes(rec.properties, PID_TABLE_COLUMN_WIDTHS)) if rec.properties else ()
+        borders_visible = _bool_from_prop(rec.properties, PID_TABLE_BORDERS_VISIBLE)
+        return Table(
+            oid=oid,
+            jcid_index=jidx,
+            raw_properties=rec.properties,
+            children=children,
+            tags=tags,
+            row_count=row_count,
+            column_count=col_count,
+            column_widths=col_widths,
+            borders_visible=borders_visible,
+        )
 
     if jidx == JCID_TABLE_ROW_NODE_INDEX:
         children = _children_from_pid(rec, PID_ELEMENT_CHILD_NODES, state)

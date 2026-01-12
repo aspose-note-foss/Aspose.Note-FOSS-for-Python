@@ -26,6 +26,9 @@ class Page(BaseNode):
     # Newest-to-oldest snapshots of this page in previous revisions.
     # Empty by default; populated by ms_one.reader.parse_section_file_with_page_history.
     history: tuple["Page", ...] = ()
+    # Layout properties (all floats in half-points unless otherwise noted)
+    page_width: float | None = None
+    page_height: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +39,10 @@ class Title(BaseNode):
 @dataclass(frozen=True, slots=True)
 class Outline(BaseNode):
     children: tuple[BaseNode, ...]
+    # Layout properties (float in half-points)
+    offset_horizontal: float | None = None
+    offset_vertical: float | None = None
+    layout_max_width: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,8 +138,18 @@ class Image(BaseNode):
     # Zero or more file-data references extracted from properties.
     # Values are canonical UUID strings (lowercase, 36 chars) extracted from `<ifndf>{GUID}</ifndf>`.
     file_data_guids: tuple[str, ...] = ()
+    # Best-effort embedded bytes (PNG/JPEG/etc.) extracted from PictureContainer when present.
+    data: bytes = b""
     # Zero or more note tags associated with this image object.
     tags: tuple["NoteTag", ...] = ()
+    # Layout properties (float; width/height in half-inch increments)
+    offset_horizontal: float | None = None
+    offset_vertical: float | None = None
+    layout_max_width: float | None = None
+    layout_max_height: float | None = None
+    picture_width: float | None = None
+    picture_height: float | None = None
+    hyperlink: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +160,8 @@ class EmbeddedFile(BaseNode):
     # Zero or more file-data references extracted from properties.
     # Values are canonical UUID strings (lowercase, 36 chars) extracted from `<ifndf>{GUID}</ifndf>`.
     file_data_guids: tuple[str, ...] = ()
+    # Best-effort embedded bytes extracted from PictureContainer when present.
+    data: bytes = b""
     # Zero or more note tags associated with this embedded object.
     tags: tuple["NoteTag", ...] = ()
 
@@ -152,6 +171,11 @@ class Table(BaseNode):
     children: tuple[BaseNode, ...]
     # Zero or more note tags associated with this table object.
     tags: tuple["NoteTag", ...] = ()
+    # Table layout properties
+    row_count: int | None = None
+    column_count: int | None = None
+    column_widths: tuple[float, ...] = ()
+    borders_visible: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

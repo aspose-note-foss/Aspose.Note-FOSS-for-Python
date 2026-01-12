@@ -276,6 +276,20 @@ class TestOneNoteAPI3ImagesWithDifferentAlignment(unittest.TestCase):
         # are validated at the MS-ONE entity layer test above.
         self.assertIn("Image in the outline with right alignment", combined)
 
+    def test_public_images_have_data_and_are_identical(self) -> None:
+        images: list[PublicImage] = []
+        for page in self.doc.pages:
+            images.extend(list(page.iter_images()))
+
+        self.assertEqual(len(images), 3)
+
+        blobs = [img.data for img in images]
+        self.assertTrue(all(isinstance(b, (bytes, bytearray)) for b in blobs))
+        self.assertTrue(all(len(b) > 1024 for b in blobs), "Expected all images to have embedded bytes > 1KB")
+
+        h = [hashlib.sha256(bytes(b)).digest() for b in blobs]
+        self.assertEqual(len(set(h)), 1, "Expected all three Image nodes to resolve to the same embedded bytes")
+
     def test_extracts_three_images_to_out_dir_and_sizes_are_gt_1kb(self) -> None:
         # NOTE: Public Image.data is not populated yet; resolve raw image bytes via
         # the MS-ONE Image nodes' file-data references.

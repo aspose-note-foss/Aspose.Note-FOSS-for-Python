@@ -82,6 +82,7 @@ from .elements import (
     TableCell,
     AttachedFile,
 )
+from .pdf_export import PdfExporter, PdfExportOptions, export_pdf
 
 __all__ = [
     "Document",
@@ -99,6 +100,9 @@ __all__ = [
     "TableRow",
     "TableCell",
     "AttachedFile",
+    "PdfExporter",
+    "PdfExportOptions",
+    "export_pdf",
 ]
 
 __version__ = "0.1.0"

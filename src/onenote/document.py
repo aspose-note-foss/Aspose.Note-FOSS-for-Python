@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, BinaryIO
+from typing import Iterator, BinaryIO, TYPE_CHECKING
 
 from .elements import Page, Element
+
+if TYPE_CHECKING:
+    from .pdf_export import PdfExportOptions
 
 
 @dataclass
@@ -150,6 +153,41 @@ class Document:
     def source_path(self) -> Path | None:
         """Original file path if opened from file."""
         return self._source_path
+
+    def export_pdf(
+        self, 
+        output: str | Path | BinaryIO,
+        *,
+        options: "PdfExportOptions | None" = None
+    ) -> None:
+        """Export the document to PDF format.
+
+        Requires the reportlab library. Install with: pip install reportlab
+
+        Args:
+            output: Output file path or file-like object.
+            options: Export options (page size, margins, fonts, etc.).
+                    If None, uses default options.
+
+        Raises:
+            ImportError: If reportlab is not installed.
+
+        Example::
+
+            doc = Document.open("notes.one")
+            doc.export_pdf("output.pdf")
+
+            # With custom options
+            from onenote.pdf_export import PdfExportOptions
+            options = PdfExportOptions(
+                margin_left=50,
+                margin_right=50,
+                default_font_size=12,
+            )
+            doc.export_pdf("output.pdf", options=options)
+        """
+        from .pdf_export import export_pdf
+        export_pdf(self, output, options)
 
     def __repr__(self) -> str:
         name = self.display_name or (self._source_path.name if self._source_path else "Document")

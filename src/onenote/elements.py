@@ -150,6 +150,12 @@ class Image(Element):
     tags: list[NoteTag] = field(default_factory=list)
     """Note tags associated with this image."""
 
+    x: float | None = None
+    """X offset from parent in points (when image is directly on page)."""
+
+    y: float | None = None
+    """Y offset from parent in points (when image is directly on page)."""
+
 
 @dataclass
 class AttachedFile(Element):
@@ -223,6 +229,12 @@ class Table(Element):
 
     tags: list[NoteTag] = field(default_factory=list)
     """Note tags associated with this table."""
+
+    column_widths: list[float] = field(default_factory=list)
+    """Width of each column in points."""
+
+    borders_visible: bool = True
+    """Whether table borders are visible."""
 
     @property
     def row_count(self) -> int:
@@ -405,6 +417,12 @@ class Page(Element):
 
     is_read_only: bool | None = None
     """True if this page is read-only, when known."""
+
+    width: float | None = None
+    """Page width in points."""
+
+    height: float | None = None
+    """Page height in points."""
 
     def iter_children(self) -> Iterator[Element]:
         return iter(self.children)
