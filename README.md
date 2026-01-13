@@ -1,10 +1,19 @@
-# Aspose.Note for Python (Aspose.Note-compatible API)
+# 🗒️ Aspose.Note for Python (Aspose.Note-compatible API)
+
+[![CI](https://github.com/aspose-note/aspose-note-python/actions/workflows/ci.yml/badge.svg)](https://github.com/aspose-note/aspose-note-python/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/aspose-note.svg)](https://pypi.org/project/aspose-note/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/aspose-note.svg)](https://pypi.org/project/aspose-note/)
+[![License](https://img.shields.io/pypi/l/aspose-note.svg)](LICENSE)
+
+Quick links: [📚 Examples](examples/) • [📦 PyPI](https://pypi.org/project/aspose-note/)
+
+✅ **Official Aspose project** — **100% free & open-source (MPL-2.0 licensed)**. Provides an Aspose.Note-compatible Python API for working with OneNote `.one` files.
 
 This repository provides a Python library with an **Aspose.Note-shaped public API** for reading Microsoft OneNote files (`.one`).
 
 The goal is to offer a familiar surface (`aspose.note.*`) inspired by [Aspose.Note for .NET](https://products.aspose.com/note/net/), backed by this repository’s built-in MS-ONE/OneStore parser.
 
-## Features
+## ✨ Features
 
 - ✅ Read `.one` from a file path or a binary stream
 - ✅ Aspose-like DOM (Document/Page/Outline/…): traversal + type-based search
@@ -17,7 +26,7 @@ The goal is to offer a familiar surface (`aspose.note.*`) inspired by [Aspose.No
   - ✅ Numbered lists (NumberList) and indent levels
 - ✅ PDF export via `Document.Save(..., SaveFormat.Pdf)` (uses ReportLab)
 
-## Quick start
+## 🚀 Quick start
 
 ```python
 from aspose.note import Document
@@ -31,7 +40,7 @@ for page in doc:
     print(page.Title.TitleText.Text)
 ```
 
-### Export to PDF
+### 📄 Export to PDF
 
 ```python
 from aspose.note import Document, SaveFormat
@@ -40,7 +49,19 @@ doc = Document("testfiles/FormattedRichText.one")
 doc.Save("out.pdf", SaveFormat.Pdf)
 ```
 
-## Installation
+## 📦 Installation
+
+From PyPI:
+
+```bash
+python -m pip install aspose-note
+```
+
+With PDF export support:
+
+```bash
+python -m pip install "aspose-note[pdf]"
+```
 
 From a local checkout:
 
@@ -54,14 +75,16 @@ PDF export requires ReportLab:
 python -m pip install -e ".[pdf]"
 ```
 
-## Public API (what is considered supported)
+PyPI release page (maintainers): https://pypi.org/manage/project/aspose-note/releases/
+
+## 🧩 Public API (what is considered supported)
 
 Only the `aspose.note` package is considered **public and supported**.
 Everything under `aspose.note._internal` is internal implementation detail and may change.
 
 Below is a complete list of objects exported from `aspose.note.__init__`.
 
-### Document and traversal
+### 🧭 Document and traversal
 
 - `Document(source=None, load_options=None)`
   - `DisplayName: str | None`
@@ -90,7 +113,7 @@ Below is a complete list of objects exported from `aspose.note.__init__`.
   - `GetEnumerator()` / iteration `for child in node: ...`
   - `GetChildNodes(Type) -> list[Type]` — recursive search by type
 
-### Document structure
+### 🏗️ Document structure
 
 - `Page(CompositeNode)`
   - `Title: Title | None`
@@ -112,7 +135,7 @@ Below is a complete list of objects exported from `aspose.note.__init__`.
   - `NumberList: NumberList | None`
   - `Tags: list[NoteTag]`
 
-### Content
+### 📝 Content
 
 - `RichText(CompositeNode)`
   - `Text: str`
@@ -160,7 +183,7 @@ Below is a complete list of objects exported from `aspose.note.__init__`.
 - `NumberList(Node)`
   - `Format: str | None`, `Restart: int | None`, `IsNumbered: bool`
 
-### Load/save options
+### ⚙️ Load/save options
 
 - `LoadOptions`
   - `DocumentPassword: str | None` (password/encryption is **not supported**)
@@ -175,14 +198,14 @@ Below is a complete list of objects exported from `aspose.note.__init__`.
 
 - `OneSaveOptions`, `HtmlSaveOptions`, `ImageSaveOptions` — declared for API compatibility but not implemented.
 
-### Enums
+### 🔢 Enums
 
 - `SaveFormat`: `One`, `Pdf`, `Html`, plus raster formats (`Jpeg`, `Png`, `Gif`, `Bmp`, `Tiff`)
 - `FileFormat`: `OneNote2010`, `OneNoteOnline`, `OneNote2007`
 - `HorizontalAlignment`: `Left`, `Center`, `Right`
 - `NodeType`: `Document`, `Page`, `Outline`, `OutlineElement`, `RichText`, `Image`, `Table`, `AttachedFile`
 
-### Exceptions
+### 🚨 Exceptions
 
 - `AsposeNoteError` (base)
 - `FileCorruptedException`
@@ -191,9 +214,11 @@ Below is a complete list of objects exported from `aspose.note.__init__`.
 - `UnsupportedFileFormatException` (has a `FileFormat` field)
 - `UnsupportedSaveFormatException`
 
-## Examples
+## 📚 MS OneNote Examples
 
-### Extract all text from a document
+More runnable scripts are available in [examples/](examples/) (MS OneNote `.one` samples).
+
+### 📝 Extract all text from an MS OneNote document
 
 ```python
 from aspose.note import Document, RichText
@@ -203,7 +228,7 @@ texts = [rt.Text for rt in doc.GetChildNodes(RichText)]
 print("\n".join(texts))
 ```
 
-### Save all images to disk
+### 🖼️ Save all images from an MS OneNote document to disk
 
 ```python
 from aspose.note import Document, Image
@@ -215,7 +240,7 @@ for i, img in enumerate(doc.GetChildNodes(Image), start=1):
         f.write(img.Bytes)
 ```
 
-### PDF export with custom tag icons
+### 🏷️📄 Export an MS OneNote document to PDF (custom tag icons)
 
 ```python
 from aspose.note import Document, PdfSaveOptions, SaveFormat
@@ -230,7 +255,7 @@ opts = PdfSaveOptions(
 doc.Save("out.pdf", opts)
 ```
 
-### Load from a binary stream
+### 📦 Load an MS OneNote document from a binary stream
 
 ```python
 from pathlib import Path
@@ -244,7 +269,7 @@ print(doc.DisplayName)
 print(doc.Count())
 ```
 
-### Traverse the DOM and print a simple outline
+### 🧭 Traverse MS OneNote document structure (DOM) and print a simple outline
 
 ```python
 from aspose.note import Document, Page, Outline, OutlineElement, RichText
@@ -263,7 +288,7 @@ for page in doc.GetChildNodes(Page):
         print("-", " ".join(t.strip() for t in texts if t.strip()))
 ```
 
-### Use `DocumentVisitor` to count nodes
+### 🔎 Count MS OneNote DOM nodes with `DocumentVisitor`
 
 ```python
 from aspose.note import Document, DocumentVisitor, Page, Image, RichText
@@ -291,7 +316,7 @@ doc.Accept(counter)
 print(counter.pages, counter.rich_texts, counter.images)
 ```
 
-### Extract hyperlinks from formatted text
+### 🔗 Extract hyperlinks from formatted text in an MS OneNote document
 
 ```python
 from aspose.note import Document, RichText
@@ -303,7 +328,7 @@ for rt in doc.GetChildNodes(RichText):
       print(run.Text, "->", run.Style.HyperlinkAddress)
 ```
 
-### Inspect tags (NoteTag) across the document
+### 🏷️ Inspect MS OneNote tags (NoteTag) across the document
 
 ```python
 from aspose.note import Document, RichText, Image, Table
@@ -324,7 +349,7 @@ for tbl in doc.GetChildNodes(Table):
   dump_tags("Table", tbl.Tags)
 ```
 
-### Work with tables (rows/cells)
+### 🧱 Work with tables in an MS OneNote document (rows/cells)
 
 ```python
 from aspose.note import Document, Table, TableRow, TableCell, RichText
@@ -342,7 +367,7 @@ for table in doc.GetChildNodes(Table):
     print(f"Row {row_index}:", values)
 ```
 
-### Extract attached files
+### 📎 Extract attached files from an MS OneNote document
 
 ```python
 from aspose.note import Document, AttachedFile
@@ -356,7 +381,7 @@ for i, af in enumerate(doc.GetChildNodes(AttachedFile), start=1):
   print("saved:", name)
 ```
 
-### Inspect list formatting (NumberList) and indentation
+### 🔢 Inspect numbered lists in an MS OneNote document (NumberList + indentation)
 
 ```python
 from aspose.note import Document, OutlineElement
@@ -375,24 +400,13 @@ for oe in doc.GetChildNodes(OutlineElement):
   )
 ```
 
-### Handle unsupported/encrypted documents explicitly
-
-```python
-from aspose.note import Document, LoadOptions, IncorrectPasswordException
-
-try:
-  doc = Document("some_encrypted.one", LoadOptions(DocumentPassword="secret"))
-except IncorrectPasswordException as e:
-  print("Encrypted documents are not supported:", e)
-```
-
-## Current limitations
+## ⚠️ Current limitations
 
 - The implementation focuses on **reading** `.one` and building a DOM; writing back to `.one` is not implemented.
 - `DocumentPassword` / encrypted documents are not supported (raises `IncorrectPasswordException`).
 - Saving formats other than PDF (HTML/images/ONE) are declared for compatibility but not implemented.
 
-## Other platforms (official Aspose.Note)
+## 🌐 Other platforms (official Aspose.Note)
 
 If you need the full-featured Aspose product (writing/conversion, broader compatibility, etc.), see the official libraries:
 
@@ -404,7 +418,7 @@ If you need the full-featured Aspose product (writing/conversion, broader compat
   - Product: https://products.aspose.com/note/java/
   - Documentation: https://docs.aspose.com/note/java/
 
-## Development
+## 🛠️ Development
 
 Run tests:
 

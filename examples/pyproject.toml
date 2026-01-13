@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aspose-note-examples"
+version = "0.0.0"
+description = "Examples for the PyPI package aspose-note"
+requires-python = ">=3.10"
+# Install deps into a venv via: `python -m pip install -e .`
+dependencies = [
+  "aspose-note",
+  "reportlab>=3.6",
+]
+
+[tool.setuptools]
+# No packages; this project only pins dependencies
+packages = []
