@@ -410,5 +410,5 @@ Run tests:
 
 ```bash
 python -m pip install -e ".[pdf]"
-python -m pytest
+python -m unittest discover -s tests -p "test_*.py" -v
 ```
