@@ -1,4 +1,4 @@
-# 🗒️ Aspose.Note for Python (Aspose.Note-compatible API)
+# 🗒️ Aspose.Note for Python (Aspose-compatible API)
 
 [![CI](https://github.com/aspose-note/aspose-note-python/actions/workflows/ci.yml/badge.svg)](https://github.com/aspose-note/aspose-note-python/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/aspose-note.svg)](https://pypi.org/project/aspose-note/)
@@ -8,8 +8,6 @@
 Quick links: [📚 Examples](examples/) • [📦 PyPI](https://pypi.org/project/aspose-note/)
 
 ✅ **Official Aspose project** — **100% free & open-source (MPL-2.0 licensed)**. Provides an Aspose.Note-compatible Python API for working with OneNote `.one` files.
-
-Third-party license notices (e.g., ReportLab used for PDF export) are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 This repository provides a Python library with an **Aspose.Note-shaped public API** for reading Microsoft OneNote files (`.one`).
 
@@ -428,3 +426,5 @@ Run tests:
 python -m pip install -e ".[pdf]"
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
+
+Third-party license notices (e.g., ReportLab used for PDF export) are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
