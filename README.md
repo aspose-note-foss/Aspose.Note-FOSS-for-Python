@@ -427,4 +427,4 @@ python -m pip install -e ".[pdf]"
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-Third-party license notices (e.g., ReportLab used for PDF export) are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Third-party license notices (e.g., ReportLab used for PDF export) are in [THIRD_PARTY_NOTICES.md](https://github.com/aspose-note/aspose-note-python/blob/main/THIRD_PARTY_NOTICES.md).
