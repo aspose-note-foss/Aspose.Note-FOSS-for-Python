@@ -9,7 +9,7 @@ description = "Aspose.Note-compatible Python API for reading OneNote (.one) file
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MPL-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{name = "Aspose"}]
 
 keywords = ["onenote", "one", "aspose", "parser", "pdf"]

@@ -2,6 +2,8 @@
 
 Minimal, runnable scripts that use the PyPI package `aspose-note` to open and process **Microsoft OneNote** `.one` documents from `../testfiles`.
 
+Third-party license notices (e.g., ReportLab used for PDF export) are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Install
 
 Create a dedicated virtual environment under `examples/` and install dependencies from `examples/pyproject.toml`:
