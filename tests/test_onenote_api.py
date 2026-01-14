@@ -10,7 +10,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from onenote import Document, Element, Page, Outline, OutlineElement, RichText, Table  # noqa: E402
+from aspose.note._internal.onenote import Document, Element, Page, Outline, OutlineElement, RichText, Table  # noqa: E402
 
 
 def _simpletable_path() -> Path | None:
@@ -204,7 +204,7 @@ class TestImports(unittest.TestCase):
 
     def test_import_all(self) -> None:
         """All __all__ symbols should be importable."""
-        from onenote import (
+        from aspose.note._internal.onenote import (
             Document,
             Element,
             Page,

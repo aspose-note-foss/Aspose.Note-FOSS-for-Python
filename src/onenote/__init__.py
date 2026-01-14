@@ -1,108 +1,27 @@
-"""OneNote document parsing library.
+"""Compatibility wrapper for the OneNote parser package.
 
-This package provides a clean, user-friendly API for reading Microsoft OneNote
-section files (.one format).
-
-Basic Usage
------------
-
-Open and read a OneNote document::
-
-    from onenote import Document
-
-    # Open a .one file
-    doc = Document.open("MyNotes.one")
-
-    # Access pages
-    for page in doc.pages:
-        print(f"Page: {page.title}")
-        print(page.text)
-
-    # Get page count
-    print(f"Total pages: {len(doc)}")
-
-Working with Page Content
--------------------------
-
-Iterate over page structure::
-
-    page = doc.pages[0]
-
-    # Get all outlines (content blocks)
-    for outline in page.iter_outlines():
-        print(outline.text)
-
-    # Get all images
-    for image in page.iter_images():
-        print(f"Image: {image.alt_text}")
-
-    # Get all tables
-    for table in page.iter_tables():
-        print(f"Table: {table.row_count}x{table.column_count}")
-
-Element Types
--------------
-
-- ``Document``: Root container (a .one section file)
-- ``Page``: A page with title and content
-- ``Title``: Page title element
-- ``Outline``: Content block container
-- ``OutlineElement``: Paragraph-like element within outline
-- ``RichText``: Text content with formatting
-- ``Image``: Embedded image
-- ``Table``, ``TableRow``, ``TableCell``: Table structure
-- ``AttachedFile``: Embedded file attachment
-
-Example: Extract All Text
--------------------------
-
-::
-
-    doc = Document.open("notes.one")
-    for page in doc:
-        print(f"=== {page.title} ===")
-        print(page.text)
-        print()
+One source of truth lives under :mod:`aspose.note._internal.onenote`.
+This top-level package exists for developer convenience and backward-compatible
+imports (e.g. ``from onenote import Document``).
 """
 
-from .document import Document
-from .elements import (
-    Element,
-    NoteTag,
-    TextStyle,
-    TextRun,
-    Page,
-    Title,
-    Outline,
-    OutlineElement,
-    RichText,
-    Image,
-    Table,
-    TableRow,
-    TableCell,
-    AttachedFile,
-)
-from .pdf_export import PdfExporter, PdfExportOptions, export_pdf
+from __future__ import annotations
 
-__all__ = [
-    "Document",
-    "Element",
-    "NoteTag",
-    "TextStyle",
-    "TextRun",
-    "Page",
-    "Title",
-    "Outline",
-    "OutlineElement",
-    "RichText",
-    "Image",
-    "Table",
-    "TableRow",
-    "TableCell",
-    "AttachedFile",
-    "PdfExporter",
-    "PdfExportOptions",
-    "export_pdf",
-]
+import importlib
+import sys
 
-__version__ = "0.1.0"
+
+_INTERNAL_PKG = "aspose.note._internal.onenote"
+
+# Ensure submodule imports like `import onenote.parser` resolve to internal code
+# even though the real implementation is vendored under aspose.note._internal.
+for _sub in ("document", "elements", "parser", "pdf_export"):
+    sys.modules[f"{__name__}.{_sub}"] = importlib.import_module(f"{_INTERNAL_PKG}.{_sub}")
+
+_internal = importlib.import_module(_INTERNAL_PKG)
+
+__all__ = list(getattr(_internal, "__all__", []))
+__version__ = getattr(_internal, "__version__", "0.0.0")
+
+for _name in __all__:
+    globals()[_name] = getattr(_internal, _name)

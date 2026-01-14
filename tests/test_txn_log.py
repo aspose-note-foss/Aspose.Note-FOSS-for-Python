@@ -5,10 +5,10 @@ from tests._bootstrap import ensure_src_on_path
 
 ensure_src_on_path()
 
-from onestore.chunk_refs import FileChunkReference64x32  # noqa: E402
-from onestore.header import Header  # noqa: E402
-from onestore.io import BinaryReader  # noqa: E402
-from onestore.txn_log import parse_transaction_log  # noqa: E402
+from aspose.note._internal.onestore.chunk_refs import FileChunkReference64x32  # noqa: E402
+from aspose.note._internal.onestore.header import Header  # noqa: E402
+from aspose.note._internal.onestore.io import BinaryReader  # noqa: E402
+from aspose.note._internal.onestore.txn_log import parse_transaction_log  # noqa: E402
 
 
 def _entry(src_id: int, value: int) -> bytes:

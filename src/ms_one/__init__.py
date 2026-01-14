@@ -1,10 +1,32 @@
-"""MS-ONE entity reader built on top of the MS-ONESTORE container reader."""
+"""Compatibility wrapper for the MS-ONE reader package.
 
-from .errors import MSOneFormatError
-from .reader import parse_section_file, parse_section_file_with_page_history
+One source of truth lives under :mod:`aspose.note._internal.ms_one`.
+This top-level package exists for developer convenience and backward-compatible
+imports.
+"""
 
-__all__ = [
-    "MSOneFormatError",
-    "parse_section_file",
-    "parse_section_file_with_page_history",
-]
+from __future__ import annotations
+
+import importlib
+import sys
+
+
+_INTERNAL_PKG = "aspose.note._internal.ms_one"
+
+for _sub in (
+    "compact_id",
+    "errors",
+    "object_index",
+    "property_access",
+    "reader",
+    "spec_ids",
+    "types",
+):
+    sys.modules[f"{__name__}.{_sub}"] = importlib.import_module(f"{_INTERNAL_PKG}.{_sub}")
+
+_internal = importlib.import_module(_INTERNAL_PKG)
+
+__all__ = list(getattr(_internal, "__all__", []))
+
+for _name in __all__:
+    globals()[_name] = getattr(_internal, _name)

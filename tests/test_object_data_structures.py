@@ -1,9 +1,9 @@
 import unittest
 
-from onestore.common_types import CompactID
-from onestore.errors import OneStoreFormatError
-from onestore.io import BinaryReader
-from onestore.object_data import (
+from aspose.note._internal.onestore.common_types import CompactID
+from aspose.note._internal.onestore.errors import OneStoreFormatError
+from aspose.note._internal.onestore.io import BinaryReader
+from aspose.note._internal.onestore.object_data import (
     DecodedPropertySet,
     ObjectSpaceObjectStreamHeader,
     ObjectSpaceObjectStream,
@@ -14,7 +14,7 @@ from onestore.object_data import (
     PrtArrayOfPropertyValues,
     decode_property_set,
 )
-from onestore.parse_context import ParseContext
+from aspose.note._internal.onestore.parse_context import ParseContext
 
 
 class TestObjectDataStructures(unittest.TestCase):

@@ -10,8 +10,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from onestore.parse_context import ParseContext
-from onestore.summary import build_simpletable_summary
+from aspose.note._internal.onestore.parse_context import ParseContext
+from aspose.note._internal.onestore.summary import build_simpletable_summary
 
 
 def main() -> int:

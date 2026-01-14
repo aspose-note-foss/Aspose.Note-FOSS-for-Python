@@ -8,15 +8,15 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ms_one.reader import parse_section_file  # noqa: E402
-from ms_one.object_index import ObjectIndex, ObjectRecord, apply_object_groups  # noqa: E402
-from ms_one.compact_id import EffectiveGidTable  # noqa: E402
+from aspose.note._internal.ms_one.reader import parse_section_file  # noqa: E402
+from aspose.note._internal.ms_one.object_index import ObjectIndex, ObjectRecord, apply_object_groups  # noqa: E402
+from aspose.note._internal.ms_one.compact_id import EffectiveGidTable  # noqa: E402
 
-from onestore.header import Header  # noqa: E402
-from onestore.io import BinaryReader  # noqa: E402
-from onestore.object_space import parse_object_spaces_with_revisions, parse_object_spaces_with_resolved_ids  # noqa: E402
-from onestore.parse_context import ParseContext  # noqa: E402
-from onestore.txn_log import parse_transaction_log  # noqa: E402
+from aspose.note._internal.onestore.header import Header  # noqa: E402
+from aspose.note._internal.onestore.io import BinaryReader  # noqa: E402
+from aspose.note._internal.onestore.object_space import parse_object_spaces_with_revisions, parse_object_spaces_with_resolved_ids  # noqa: E402
+from aspose.note._internal.onestore.parse_context import ParseContext  # noqa: E402
+from aspose.note._internal.onestore.txn_log import parse_transaction_log  # noqa: E402
 
 
 def main() -> None:

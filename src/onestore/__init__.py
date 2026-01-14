@@ -1,103 +1,41 @@
-"""MS OneStore (.one/.onetoc2) reader utilities."""
+"""Compatibility wrapper for the OneStore reader package.
 
-from .errors import OneStoreFormatError, OneStoreWarning, ParseWarning
-from .file_node_core import FileNode
-from .file_node_list import (
-    FileNodeList,
-    FileNodeListWithNodes,
-    FileNodeListWithRaw,
-    FileNodeListWithTypedNodes,
-    parse_file_node_list,
-    parse_file_node_list_nodes,
-    parse_file_node_list_typed_nodes,
-    parse_file_node_list_with_raw,
-)
-from .io import BinaryReader
-from .object_space import (
-    OneStoreObjectSpacesSummary,
-    OneStoreObjectSpacesWithRevisions,
-    OneStoreObjectSpacesWithResolvedIds,
-    ObjectSpaceRevisionsSummary,
-    ObjectSpaceResolvedIdsSummary,
-    ObjectSpaceSummary,
-    RevisionResolvedIdsSummary,
-    RevisionSummary,
-    parse_object_spaces_summary,
-    parse_object_spaces_with_resolved_ids,
-    parse_object_spaces_with_revisions,
-)
-from .object_data import (
-    DecodedProperty,
-    DecodedPropertySet,
-    ObjectSpaceObjectPropSet,
-    ObjectSpaceObjectStream,
-    ObjectSpaceObjectStreamHeader,
-    PropertyID,
-    PropertySet,
-    PrtArrayOfPropertyValues,
-    PrtFourBytesOfLengthFollowedByData,
-    decode_property_set,
-    parse_object_space_object_prop_set_from_ref,
-)
-from .file_data import (
-    FileDataStoreObject,
-    ParsedFileDataReference,
-    get_file_data_by_reference,
-    parse_file_data_reference,
-    parse_file_data_store_index,
-    parse_file_data_store_object_from_ref,
-)
-from .hashed_chunk_list import (
-    HashedChunkListEntry,
-    parse_hashed_chunk_list_entries,
-    parse_hashed_chunk_list_index,
-)
-from .txn_log import parse_transaction_log
+One source of truth lives under :mod:`aspose.note._internal.onestore`.
+This top-level package exists for developer convenience and backward-compatible
+imports.
+"""
 
-__all__ = [
-    "BinaryReader",
-    "FileNode",
-    "FileNodeList",
-    "FileNodeListWithNodes",
-    "FileNodeListWithRaw",
-    "FileNodeListWithTypedNodes",
-    "OneStoreObjectSpacesSummary",
-    "OneStoreObjectSpacesWithRevisions",
-    "OneStoreObjectSpacesWithResolvedIds",
-    "OneStoreFormatError",
-    "OneStoreWarning",
-    "ObjectSpaceRevisionsSummary",
-    "ObjectSpaceResolvedIdsSummary",
-    "ObjectSpaceSummary",
-    "ParseWarning",
-    "RevisionResolvedIdsSummary",
-    "RevisionSummary",
-    "parse_object_spaces_summary",
-    "parse_object_spaces_with_resolved_ids",
-    "parse_object_spaces_with_revisions",
-    "parse_file_node_list",
-    "parse_file_node_list_nodes",
-    "parse_file_node_list_typed_nodes",
-    "parse_file_node_list_with_raw",
-    "parse_transaction_log",
-    "ObjectSpaceObjectPropSet",
-    "DecodedProperty",
-    "DecodedPropertySet",
-    "ObjectSpaceObjectStream",
-    "ObjectSpaceObjectStreamHeader",
-    "PropertyID",
-    "PropertySet",
-    "PrtArrayOfPropertyValues",
-    "PrtFourBytesOfLengthFollowedByData",
-    "decode_property_set",
-    "parse_object_space_object_prop_set_from_ref",
-    "FileDataStoreObject",
-    "ParsedFileDataReference",
-    "get_file_data_by_reference",
-    "parse_file_data_reference",
-    "parse_file_data_store_index",
-    "parse_file_data_store_object_from_ref",
-    "HashedChunkListEntry",
-    "parse_hashed_chunk_list_entries",
-    "parse_hashed_chunk_list_index",
-]
+from __future__ import annotations
+
+import importlib
+import sys
+
+
+_INTERNAL_PKG = "aspose.note._internal.onestore"
+
+for _sub in (
+    "chunk_refs",
+    "common_types",
+    "crc",
+    "errors",
+    "file_data",
+    "file_node_core",
+    "file_node_list",
+    "file_node_types",
+    "hashed_chunk_list",
+    "header",
+    "io",
+    "object_data",
+    "object_space",
+    "parse_context",
+    "summary",
+    "txn_log",
+):
+    sys.modules[f"{__name__}.{_sub}"] = importlib.import_module(f"{_INTERNAL_PKG}.{_sub}")
+
+_internal = importlib.import_module(_INTERNAL_PKG)
+
+__all__ = list(getattr(_internal, "__all__", []))
+
+for _name in __all__:
+    globals()[_name] = getattr(_internal, _name)

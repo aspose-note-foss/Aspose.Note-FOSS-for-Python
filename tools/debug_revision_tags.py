@@ -21,25 +21,25 @@ def main() -> None:
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
 
-    from onestore.object_space import (  # noqa: WPS433
+    from aspose.note._internal.onestore.object_space import (  # noqa: WPS433
         parse_object_spaces_with_resolved_ids,
         parse_object_spaces_with_revisions,
     )
-    from onestore.header import Header  # noqa: WPS433
-    from onestore.io import BinaryReader  # noqa: WPS433
-    from onestore.parse_context import ParseContext  # noqa: WPS433
-    from onestore.txn_log import parse_transaction_log  # noqa: WPS433
+    from aspose.note._internal.onestore.header import Header  # noqa: WPS433
+    from aspose.note._internal.onestore.io import BinaryReader  # noqa: WPS433
+    from aspose.note._internal.onestore.parse_context import ParseContext  # noqa: WPS433
+    from aspose.note._internal.onestore.txn_log import parse_transaction_log  # noqa: WPS433
 
-    from ms_one.compact_id import resolve_compact_id_array  # noqa: WPS433
-    from ms_one.entities.parsers import ParseState, parse_node  # noqa: WPS433
-    from ms_one.entities.structure import EmbeddedFile, PageSeries, Section  # noqa: WPS433
-    from ms_one.property_access import get_oid_array  # noqa: WPS433
-    from ms_one.reader import (  # noqa: WPS433
+    from aspose.note._internal.ms_one.compact_id import resolve_compact_id_array  # noqa: WPS433
+    from aspose.note._internal.ms_one.entities.parsers import ParseState, parse_node  # noqa: WPS433
+    from aspose.note._internal.ms_one.entities.structure import EmbeddedFile, PageSeries, Section  # noqa: WPS433
+    from aspose.note._internal.ms_one.property_access import get_oid_array  # noqa: WPS433
+    from aspose.note._internal.ms_one.reader import (  # noqa: WPS433
         _build_effective_object_index_for_object_space,
         _extract_pages_from_page_object_space,
         _pick_root_object_space,
     )
-    from ms_one.spec_ids import PID_CHILD_GRAPH_SPACE_ELEMENT_NODES  # noqa: WPS433
+    from aspose.note._internal.ms_one.spec_ids import PID_CHILD_GRAPH_SPACE_ELEMENT_NODES  # noqa: WPS433
 
     if len(sys.argv) < 2:
         print("Usage: python tools/debug_revision_tags.py <file.one>")

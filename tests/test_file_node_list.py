@@ -8,15 +8,15 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from onestore.chunk_refs import FileChunkReference64x32  # noqa: E402
-from onestore.file_node_list import (  # noqa: E402
+from aspose.note._internal.onestore.chunk_refs import FileChunkReference64x32  # noqa: E402
+from aspose.note._internal.onestore.file_node_list import (  # noqa: E402
     CHUNK_TERMINATOR_FND_ID,
     FNL_FOOTER_MAGIC,
     FNL_HEADER_MAGIC,
     parse_file_node_list,
 )
-from onestore.io import BinaryReader  # noqa: E402
-from onestore.parse_context import ParseContext  # noqa: E402
+from aspose.note._internal.onestore.io import BinaryReader  # noqa: E402
+from aspose.note._internal.onestore.parse_context import ParseContext  # noqa: E402
 
 
 def _pack_filenode_header(

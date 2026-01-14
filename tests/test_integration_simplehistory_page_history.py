@@ -7,11 +7,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ms_one import parse_section_file_with_page_history  # noqa: E402
-from ms_one.entities.base import BaseNode  # noqa: E402
-from ms_one.entities.structure import Page as MsPage  # noqa: E402
-from ms_one.entities.structure import RichText as MsRichText  # noqa: E402
-from ms_one.entities.structure import Section as MsSection  # noqa: E402
+from aspose.note._internal.ms_one import parse_section_file_with_page_history  # noqa: E402
+from aspose.note._internal.ms_one.entities.base import BaseNode  # noqa: E402
+from aspose.note._internal.ms_one.entities.structure import Page as MsPage  # noqa: E402
+from aspose.note._internal.ms_one.entities.structure import RichText as MsRichText  # noqa: E402
+from aspose.note._internal.ms_one.entities.structure import Section as MsSection  # noqa: E402
 
 
 def _fixture_path() -> Path | None:

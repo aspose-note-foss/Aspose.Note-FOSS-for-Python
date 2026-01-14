@@ -8,8 +8,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from onestore.errors import OneStoreFormatError  # noqa: E402
-from onestore.io import BinaryReader  # noqa: E402
+from aspose.note._internal.onestore.errors import OneStoreFormatError  # noqa: E402
+from aspose.note._internal.onestore.io import BinaryReader  # noqa: E402
 
 
 class TestBinaryReader(unittest.TestCase):

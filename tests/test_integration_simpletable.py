@@ -10,34 +10,34 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from onestore.chunk_refs import FileChunkReference32, FileChunkReference64x32, parse_filenode_chunk_reference  # noqa: E402
-from onestore.common_types import ExtendedGUID, StringInStorageBuffer  # noqa: E402
-from onestore.crc import crc32_rfc3309  # noqa: E402
-from onestore.errors import OneStoreFormatError  # noqa: E402
-from onestore.header import GUID_FILE_FORMAT, GUID_FILE_TYPE_ONE, Header  # noqa: E402
-from onestore.io import BinaryReader  # noqa: E402
-from onestore.object_space import parse_object_spaces_summary  # noqa: E402
-from onestore.object_space import parse_object_spaces_with_revisions  # noqa: E402
-from onestore.object_space import parse_object_spaces_with_resolved_ids  # noqa: E402
-from onestore.object_data import parse_object_space_object_prop_set_from_ref  # noqa: E402
-from onestore.file_data import (  # noqa: E402
+from aspose.note._internal.onestore.chunk_refs import FileChunkReference32, FileChunkReference64x32, parse_filenode_chunk_reference  # noqa: E402
+from aspose.note._internal.onestore.common_types import ExtendedGUID, StringInStorageBuffer  # noqa: E402
+from aspose.note._internal.onestore.crc import crc32_rfc3309  # noqa: E402
+from aspose.note._internal.onestore.errors import OneStoreFormatError  # noqa: E402
+from aspose.note._internal.onestore.header import GUID_FILE_FORMAT, GUID_FILE_TYPE_ONE, Header  # noqa: E402
+from aspose.note._internal.onestore.io import BinaryReader  # noqa: E402
+from aspose.note._internal.onestore.object_space import parse_object_spaces_summary  # noqa: E402
+from aspose.note._internal.onestore.object_space import parse_object_spaces_with_revisions  # noqa: E402
+from aspose.note._internal.onestore.object_space import parse_object_spaces_with_resolved_ids  # noqa: E402
+from aspose.note._internal.onestore.object_data import parse_object_space_object_prop_set_from_ref  # noqa: E402
+from aspose.note._internal.onestore.file_data import (  # noqa: E402
     get_file_data_by_reference,
     parse_file_data_store_index,
     parse_file_data_store_object_from_ref,
 )
-from onestore.hashed_chunk_list import (  # noqa: E402
+from aspose.note._internal.onestore.hashed_chunk_list import (  # noqa: E402
     parse_hashed_chunk_list_entries,
 )
-from onestore.summary import build_simpletable_summary  # noqa: E402
-from onestore.parse_context import ParseContext  # noqa: E402
-from onestore.txn_log import TransactionLogFragment  # noqa: E402
-from onestore.txn_log import parse_transaction_log  # noqa: E402
-from onestore.file_node_list import (  # noqa: E402
+from aspose.note._internal.onestore.summary import build_simpletable_summary  # noqa: E402
+from aspose.note._internal.onestore.parse_context import ParseContext  # noqa: E402
+from aspose.note._internal.onestore.txn_log import TransactionLogFragment  # noqa: E402
+from aspose.note._internal.onestore.txn_log import parse_transaction_log  # noqa: E402
+from aspose.note._internal.onestore.file_node_list import (  # noqa: E402
     parse_file_node_list,
     parse_file_node_list_nodes,
     parse_file_node_list_typed_nodes,
 )
-from onestore.file_node_types import (  # noqa: E402
+from aspose.note._internal.onestore.file_node_types import (  # noqa: E402
     ObjectGroupListReferenceFND,
     ObjectGroupStartFND,
     ObjectDeclaration2LargeRefCountFND,

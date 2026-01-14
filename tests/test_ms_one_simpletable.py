@@ -8,9 +8,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ms_one.reader import parse_section_file  # noqa: E402
-from ms_one.entities.base import BaseNode  # noqa: E402
-from ms_one.entities.structure import Page, Section  # noqa: E402
+from aspose.note._internal.ms_one.reader import parse_section_file  # noqa: E402
+from aspose.note._internal.ms_one.entities.base import BaseNode  # noqa: E402
+from aspose.note._internal.ms_one.entities.structure import Page, Section  # noqa: E402
 
 
 def _simpletable_path() -> Path | None:

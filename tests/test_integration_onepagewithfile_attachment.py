@@ -9,18 +9,18 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ms_one.reader import parse_section_file  # noqa: E402
-from ms_one.entities.base import BaseNode  # noqa: E402
-from ms_one.entities.structure import EmbeddedFile as MsEmbeddedFile  # noqa: E402
-from ms_one.entities.structure import Section as MsSection  # noqa: E402
+from aspose.note._internal.ms_one.reader import parse_section_file  # noqa: E402
+from aspose.note._internal.ms_one.entities.base import BaseNode  # noqa: E402
+from aspose.note._internal.ms_one.entities.structure import EmbeddedFile as MsEmbeddedFile  # noqa: E402
+from aspose.note._internal.ms_one.entities.structure import Section as MsSection  # noqa: E402
 
-from onestore.file_data import (  # noqa: E402
+from aspose.note._internal.onestore.file_data import (  # noqa: E402
     get_file_data_by_reference,
     parse_file_data_store_index,
     parse_file_data_store_object_from_ref,
 )
-from onestore.object_data import DecodedPropertySet  # noqa: E402
-from onestore.parse_context import ParseContext  # noqa: E402
+from aspose.note._internal.onestore.object_data import DecodedPropertySet  # noqa: E402
+from aspose.note._internal.onestore.parse_context import ParseContext  # noqa: E402
 
 
 def _fixture_path() -> Path | None:

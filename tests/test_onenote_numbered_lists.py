@@ -7,8 +7,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from onenote import Document  # noqa: E402
-from onenote.elements import OutlineElement  # noqa: E402
+from aspose.note._internal.onenote import Document  # noqa: E402
+from aspose.note._internal.onenote.elements import OutlineElement  # noqa: E402
 
 
 def _fixture_path() -> Path | None:
