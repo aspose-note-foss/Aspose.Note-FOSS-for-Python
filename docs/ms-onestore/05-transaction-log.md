@@ -26,6 +26,10 @@
 
 - читайте фрагменты последовательно по `nextFragment`, но прекращайте, как только по количеству прочитанных «sentinel entries» (см. ниже) вы достигли `Header.cTransactionsInLog`; если текущий фрагмент содержит последнюю транзакцию (`cTransactionsInLog` достигнут), `nextFragment` MUST be ignored (spec 2.3.3.1).
 
+Примечание по текущей реализации:
+
+- размер `sizeTable` вычисляется как «максимальный префикс, кратный 8 байтам», а хвостовые padding-байты внутри `cb` допускаются; `nextFragment` читается сразу после `sizeTable`.
+
 ## TransactionEntry (2.3.3.2)
 
 Поля:
@@ -37,6 +41,10 @@
 
 - `srcID == 0x00000001` — sentinel конец транзакции; `TransactionEntrySwitch` SHOULD быть CRC всех `TransactionEntry` текущей транзакции
 - иначе `TransactionEntrySwitch` MUST быть «новое количество FileNode в file node list `srcID`» после применения транзакции; такая запись MUST добавлять ≥1 `FileNode` в список
+
+Примечание по текущей реализации:
+
+- встречаются файлы, где `TransactionEntrySwitch == 0` для `srcID != 1`; такие записи считаются no-op и игнорируются с warning.
 
 ## Как применить Transaction Log на практике
 

@@ -6,11 +6,13 @@
 
 1. Спроектируйте пакеты (пример):
    - `onestore/io.py` — `BinaryReader`, ошибки, границы, чтение битполей.
-   - `onestore/types.py` — `ExtendedGUID`, `CompactID`, chunk references.
+   - `onestore/common_types.py` — `ExtendedGUID`, `CompactID`, `JCID`, строки.
+   - `onestore/chunk_refs.py` — `FileChunkReference*`.
    - `onestore/header.py` — `Header`.
-   - `onestore/fnl.py` — `FileNodeListFragment`, дерево фрагментов, сборка списков.
-   - `onestore/fnode.py` — `FileNode` + парсинг `fnd` по `FileNodeID`.
-   - `onestore/model.py` — object spaces, revisions, objects, property sets.
+   - `onestore/file_node_list.py` — `FileNodeListFragment` и сборка логического списка через цепочку `nextFragment`.
+   - `onestore/file_node_core.py` — `FileNode` (битовые поля) и `FileNodeChunkReference`.
+   - `onestore/file_node_types.py` — маршрутизация `FileNodeID -> TypedFileNode`.
+   - `onestore/object_space.py` / `onestore/summary.py` / `onestore/object_data.py` — object spaces, revisions, objects, property sets.
 2. Введите единый тип исключений: `OneStoreFormatError` (с полем `offset`).
 3. Сразу решите стратегию:
    - «строгий режим» (падает на нарушении MUST)
@@ -28,7 +30,7 @@
 ## Итерация 2: FileNodeListFragment + Transaction Log
 
 Готово, если:
-- вы можете пройти дерево `FileNodeListFragment` от `Header.fcrFileNodeListRoot`;
+- вы можете собрать root file node list от `Header.fcrFileNodeListRoot` и читать фрагменты по цепочке `nextFragment`;
 - вы умеете восстановить **логические** file node lists (склеить фрагменты по `FileNodeListID`);
 - вы применяете ограничение из `Transaction Log`: количество узлов в списке = значение из последней транзакции, которая его модифицировала;
 - вы корректно обрабатываете `ChunkTerminatorFND` и `nextFragment`.

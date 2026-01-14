@@ -10,11 +10,19 @@ v1 цель: поверх уже реализованного слоя `onestore
 - `jcidTitleNode`
 - `jcidOutlineNode`
 - `jcidOutlineElementNode`
-- content nodes (частично): `jcidRichTextOENode`
-- таблицы (частично): `jcidTableNode`, `jcidTableRowNode`, `jcidTableCellNode`
-- metadata nodes (пока как raw): `jcidSectionMetaData` (и др. по мере необходимости)
+- content nodes:
+	- `jcidRichTextOENode`
+	- `jcidNumberListNode` (маркер списка для `OutlineElement`)
+	- `jcidImageNode`
+	- `jcidEmbeddedFileNode`
+	- таблицы: `jcidTableNode`, `jcidTableRowNode`, `jcidTableCellNode`
+- metadata nodes:
+	- `jcidSectionMetaData` (как raw)
+	- `jcidPageMetaData` (как raw; в v1 используется как best-effort «Page leaf» для некоторых файлов)
+	- `jcidPageManifestNode`
 
 ## Политика деградации
 
 - Неизвестный `JCID` или незнакомый `PropertyID` не приводит к падению в tolerant режиме.
 - Узлы с неизвестным `JCID` возвращаются как `UnknownNode` с сохранением `raw_properties`.
+- Всякий раз, когда возможно, сохраняем детерминированный порядок детей и делаем best-effort извлечение данных (строки/списки/теги), не блокируя построение дерева.

@@ -22,7 +22,9 @@
 Ожидаемые примитивы:
 
 - `read_u32()`, `read_u64()`, `read_bytes(n)`, `tell()`, `seek(pos)`
-- `read_u32_bits(spec)` где `spec = [('field', width), ...]` с extraction LSB-first (или MSB-first — но строго последовательно во всех структурах)
+- `read_u32_bits(widths)` где `widths = [w1, w2, ...]` и извлечение идёт LSB-first (как в `BinaryReader.unpack_bits(...)`).
+
+Важно: текущая реализация возвращает только значения (без имён полей); имена остаются на стороне вызывающего кода.
 
 ## 3) Битовые поля: практический шаблон
 
@@ -37,9 +39,9 @@
 Заведите:
 
 - `OneStoreFormatError(message, offset)` — для MUST-нарушений;
-- `OneStoreWarning(message, offset)` — для SHOULD/неизвестных расширений (если делаете толерантный режим).
+- warnings через контекст `ParseContext.warn(...)` (по умолчанию копятся в `ctx.warnings`).
 
-Парсер структур должен принимать `strict: bool` (или контекст с флагами).
+Парсер структур должен принимать `ctx: ParseContext` (или совместимый флаг `strict: bool`).
 
 ## 5) Контроль размеров структур
 

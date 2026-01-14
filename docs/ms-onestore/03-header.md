@@ -15,7 +15,7 @@
    - `guidFileFormat` == `{109ADD3F-911B-49F5-A5D0-1791EDC8AED8}`
    - `cTransactionsInLog` MUST NOT be 0
    - `fcrTransactionLog` и `fcrFileNodeListRoot` MUST NOT be `fcrZero`/`fcrNil`
-   - legacy-поля MUST иметь фиксированные значения и MUST be ignored (можно warning в tolerant режиме):
+   - legacy-поля MUST иметь фиксированные значения и MUST be ignored (в текущей реализации эти MUST проверяются строго):
      - `guidLegacyFileVersion` MUST быть `{00000000-0000-0000-0000-000000000000}`
      - `fcrLegacyFreeChunkList` MUST быть `fcrZero`
      - `fcrLegacyTransactionLog` MUST быть `fcrNil`

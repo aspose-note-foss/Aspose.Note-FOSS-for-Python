@@ -43,15 +43,14 @@
 - `onestore/io.py` — `BinaryReader`, `BoundedReader/view`, утилиты битполей.
 - `onestore/common_types.py` — `ExtendedGUID`, `CompactID`, GUID helpers, `StringInStorageBuffer`.
 - `onestore/chunk_refs.py` — `FileChunkReference32/64/64x32`, `FileNodeChunkReference` (+ decode по форматам).
-- `onestore/crc.py` — CRC для `.one` (RFC3309) и `.onetoc2` (MsoCrc32Compute) + тестовые вектора.
+- `onestore/crc.py` — CRC для `.one` (RFC3309) и `.onetoc2` (MsoCrc32Compute; сейчас не реализован) + тестовые вектора.
 - `onestore/header.py` — `Header`.
 - `onestore/txn_log.py` — `TransactionLogFragment`, `TransactionEntry`, `CommittedListState`.
-- `onestore/fnl.py` — `FileNodeListHeader`, `FileNodeListFragment`, обход дерева фрагментов, сборка списков.
-- `onestore/fnode/core.py` — `FileNodeHeader`, `FileNode`, общий парсер.
-- `onestore/fnode/registry.py` — таблица `FileNodeID -> parser`, неизвестные узлы.
-- `onestore/fnode/types_*.py` — конкретные FileNode типы (манифесты, global id table, objects, file data, hashed chunks).
+- `onestore/file_node_list.py` — `FileNodeListHeader`, `FileNodeListFragment`, сборка списков по цепочке `nextFragment`.
+- `onestore/file_node_core.py` — `FileNodeHeader`, `FileNode`, общий парсер.
+- `onestore/file_node_types.py` — маршрутизация `FileNodeID -> typed` структуры, неизвестные узлы.
 - `onestore/object_data.py` — `ObjectSpaceObjectPropSet`, потоки ссылок, `JCID`, `PropertyID`, `PropertySet`, контейнеры (2.6.8/2.6.9), декодер.
-- `onestore/model.py` — высокоуровневая модель: `OneStoreFile`, `ObjectSpace`, `Revision`, `ObjectState`, индексы.
+- `onestore/object_space.py` / `onestore/summary.py` — высокоуровневая модель: object spaces, revisions, объекты и сводки.
 - `onestore/validate.py` — валидации MUST/SHOULD (разделить на уровни).
 
 ### 1.2 Публичный API (минимальный)
@@ -67,7 +66,7 @@
 ### 1.3 Контекст парсинга
 Ввести `ParseContext`:
 - `strict: bool`
-- `warnings: list[OneStoreWarning]`
+- `warnings: list[ParseWarning]`
 - `file_size: int`
 - `path: str|None`
 - (опционально) `limits`: максимальная глубина/кол-во узлов для защиты от мусора.
@@ -122,7 +121,7 @@
 - `BinaryReader` (cursor-based): `read_u8/u16/u32/u64`, `read_bytes(n)`, `seek/tell`.
 - `BoundedReader/view(offset, size)` — читает только внутри диапазона.
 - Унифицированные проверки границ с исключением `OneStoreFormatError(offset=...)`.
-- Хелпер для битполей: `read_u32_bits(spec)`/`unpack_bits(value, widths)`.
+- Хелпер для битполей: `read_u32_bits(widths)`/`unpack_bits(value, widths)`.
 
 **Готово, если**
 - Любая попытка выйти за пределы вызывает предсказуемую ошибку с offset.
@@ -199,7 +198,7 @@
 
 **Тесты**
 - unit: синтетический фрагмент с padding, nextFragment на фиксированной позиции.
-- integration: дерево фрагментов обходится от `Header.fcrFileNodeListRoot`.
+- integration: логический список собирается по цепочке `nextFragment`, начиная от `Header.fcrFileNodeListRoot`.
 
 ### Шаг 7 — FileNode core: заголовок/размер/base_type/dispatch
 См. [07-file-node-core.md](07-file-node-core.md).
