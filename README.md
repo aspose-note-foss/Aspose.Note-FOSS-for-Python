@@ -7,7 +7,7 @@
 
 Quick links: [📚 Examples](examples/) • [📦 PyPI](https://pypi.org/project/aspose-note/)
 
-✅ **Official Aspose project** — **100% free & open-source (MPL-2.0 licensed)**. Provides an Aspose.Note-compatible Python API for working with OneNote `.one` files.
+✅ **Official Aspose project** — **100% free & open-source (Split License; see https://www.aspose.org/)**. Provides an Aspose.Note-compatible Python API for working with OneNote `.one` files.
 
 This repository provides a Python library with an **Aspose.Note-shaped public API** for reading Microsoft OneNote files (`.one`).
 
