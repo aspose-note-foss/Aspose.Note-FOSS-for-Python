@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aspose-note"
-version = "0.1.4"
+version = "26.1"
 description = "Aspose.Note-compatible Python API for reading OneNote (.one) files"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "Split License"
+license = "LicenseRef-Aspose-Split"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{name = "Aspose"}]
 
@@ -22,6 +22,7 @@ classifiers = [
 	"Programming Language :: Python :: 3.12",
 	"Operating System :: OS Independent",
 	"Topic :: File Formats",
+	"License :: Other/Proprietary License",
 ]
 
 dependencies = []
