@@ -1,6 +1,6 @@
 """Minimal MS-ONE spec identifiers needed for v1 entity extraction.
 
-These values are sourced from ms-one_spec_structure.txt (generated from [MS-ONE]).
+These values are sourced from language-agnostic-plan/ms-one_spec_structure.txt (generated from [MS-ONE]).
 
 We intentionally keep this minimal and avoid scattering magic hex constants.
 """

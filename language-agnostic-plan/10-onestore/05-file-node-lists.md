@@ -46,3 +46,9 @@ Expose both:
 - Spec docs: `docs/ms-onestore/06-file-node-list.md`
 - Code: `src/aspose/note/_internal/onestore/file_node_list.py`
 - Tests: `tests/test_file_node_list.py`
+
+## Layout reference
+
+- Compact layout catalog: `10-onestore/99-layout-reference.md` (2.4.1 / 2.4.2)
+- Raw spec extract: `../ms-onestore_structures_extract.txt` (2.4.1 / 2.4.2)
+

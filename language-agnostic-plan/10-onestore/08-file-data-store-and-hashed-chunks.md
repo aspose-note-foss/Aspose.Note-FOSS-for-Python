@@ -38,3 +38,9 @@ Recommended behavior:
 - Hashed chunk list: `src/aspose/note/_internal/onestore/hashed_chunk_list.py`
 - CRC: `src/aspose/note/_internal/onestore/crc.py`
 - Tests: `tests/test_chunk_refs_and_crc.py`
+
+## Layout reference
+
+- Curated docs: `docs/ms-onestore/11-file-node-types-file-data.md`, `docs/ms-onestore/15-hashed-chunk-list.md`
+- Raw spec extract: `../ms-onestore_structures_extract.txt` (2.3.4.1, 2.5.21–2.5.22, 2.6.13)
+

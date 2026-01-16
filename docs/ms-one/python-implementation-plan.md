@@ -9,7 +9,7 @@
 
 Входные источники:
 
-- `ms-one_spec_structure.txt` — outline + extracted text из `[MS-ONE].pdf` (список JCID, PropertyID, структуры и взаимные ссылки).
+- `language-agnostic-plan/ms-one_spec_structure.txt` — outline + extracted text из `[MS-ONE].pdf` (список JCID, PropertyID, структуры и взаимные ссылки).
 - `docs/ms-onestore/*` и `src/onestore/*` — уже готовая реализация чтения OneStore: header → file node lists → object spaces/revisions → object data/property sets → file data store.
 
 Выход (v1):
@@ -67,10 +67,10 @@
 ### `tools/ms_one/extract_spec_ids.py` (новый, опционально но желательно)
 
 Зачем:
-- не поддерживать вручную большой список `PropertyID value` и `JCID` значений из `ms-one_spec_structure.txt`.
+- не поддерживать вручную большой список `PropertyID value` и `JCID` значений из `language-agnostic-plan/ms-one_spec_structure.txt`.
 
 Что сделать:
-- парсер `ms-one_spec_structure.txt`, который извлекает:
+- парсер `language-agnostic-plan/ms-one_spec_structure.txt`, который извлекает:
   - таблицу `jcid* <hex>` (пример: строки около “`jcidPageNode 0x0006000B …`”),
   - строки вида `<Name> 0x????????` из таблиц “Structure PropertyID value”.
 - сохранить результат в:
@@ -115,7 +115,7 @@
 
 Что сделать:
 - если есть генератор — подключить `from ._spec_ids_generated import ...`,
-- иначе вручную зафиксировать минимальный набор для v1 (на базе `ms-one_spec_structure.txt`).
+- иначе вручную зафиксировать минимальный набор для v1 (на базе `language-agnostic-plan/ms-one_spec_structure.txt`).
 
 Готово когда:
 - код entity layer не содержит “магических 0x…” в логике (кроме тестов/временной диагностики).
@@ -281,7 +281,7 @@
 ## Замечания по спецификации
 
 - Источник идентификаторов:
-  - JCID: таблица `jcid*` (см. около строк “`jcidPageNode 0x0006000B …`” в `ms-one_spec_structure.txt`).
+  - JCID: таблица `jcid*` (см. около строк “`jcidPageNode 0x0006000B …`” в `language-agnostic-plan/ms-one_spec_structure.txt`).
   - PropertyID: таблицы “Structure PropertyID value” (пример: `SectionDisplayName 0x1C00349B`, `ElementChildNodesOfSection 0x24001C20`).
 - Многие связи в MS-ONE выражены через свойства типа “OID array” (`PropertyID.type == 0x09`), которые `onestore.decode_property_set` уже возвращает как `tuple[CompactID, ...]`.
 

@@ -27,6 +27,18 @@ Provide helpers:
 - `is_nil()` / `is_zero()`
 - `is_in_bounds(file_size)`
 
+## Required concrete encodings
+
+To avoid “guessing the spec”, implement these exact structures:
+
+- `FileChunkReference32`: `stp:u32` + `cb:u32`
+- `FileChunkReference64x32`: `stp:u64` + `cb:u32`
+- `FileChunkReference64`: `stp:u64` + `cb:u64`
+
+Also define `fcrZero` and `fcrNil` sentinel checks for each.
+
+For `FileNodeChunkReference`, implement decoding controlled by `(StpFormat, CbFormat)` and apply the `*8` scaling for compressed forms.
+
 ## FileNodeChunkReference
 
 Some refs are encoded in a compact form where `stp` and `cb` are stored with different “formats” and may require scaling (e.g., `*8`).
@@ -50,3 +62,6 @@ If you implement resolution at OneStore layer, define:
 - `src/aspose/note/_internal/onestore/common_types.py`
 - `src/aspose/note/_internal/onestore/chunk_refs.py`
 - `src/aspose/note/_internal/ms_one/compact_id.py` (CompactID semantics)
+
+See also: `10-onestore/99-layout-reference.md`
+

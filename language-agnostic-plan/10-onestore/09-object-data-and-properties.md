@@ -33,3 +33,10 @@ Object data encodes the actual property sets that higher layers interpret.
 
 - Code: `src/aspose/note/_internal/onestore/object_data.py`
 - Tests: `tests/test_object_data_structures.py`
+
+## Layout reference
+
+- Curated docs: `docs/ms-onestore/12-object-data.md`
+- Raw spec extract: `../ms-onestore_structures_extract.txt` (2.6.1–2.6.9, 2.6.14–2.6.16)
+- MS-ONE property IDs and semantics: `../ms-one_spec_structure.txt`
+

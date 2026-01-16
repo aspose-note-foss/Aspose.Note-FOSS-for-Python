@@ -33,3 +33,12 @@ This plan is derived from these reference areas:
 - Writing/serializing `.one` files.
 - Full support for `.onetoc2` CRC32 validation (the reference implementation currently has this as TODO).
 - Encrypted notebooks (detect and report as unsupported).
+
+## Note on OneStore structure layouts
+
+If you hit a blocker like “the plan mentions Header/txn log/file node list, but field layouts are missing”, use the in-repo layout sources:
+
+- Structure catalog: `language-agnostic-plan/10-onestore/99-layout-reference.md`
+- Curated OneStore docs: `docs/ms-onestore/*`
+- Raw structure extract: `ms-onestore_structures_extract.txt`
+

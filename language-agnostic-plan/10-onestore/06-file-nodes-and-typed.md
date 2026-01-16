@@ -46,3 +46,10 @@ Unknown `FileNodeID` values should:
 - Core: `src/aspose/note/_internal/onestore/file_node_core.py`
 - Types/dispatch: `src/aspose/note/_internal/onestore/file_node_types.py`
 - Tests: `tests/test_file_node_core.py`
+
+## Layout reference
+
+- Compact layout catalog: `10-onestore/99-layout-reference.md` (2.4.3 + FileNodeID catalog)
+- Curated docs: `docs/ms-onestore/07-file-node-core.md`, `docs/ms-onestore/08..11-*.md`
+- Raw spec extract: `../ms-onestore_structures_extract.txt` (2.4.3 + FileNodeID table)
+

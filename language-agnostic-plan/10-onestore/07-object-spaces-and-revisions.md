@@ -45,3 +45,10 @@ Enforce checks that prevent misinterpretation:
 - Code: `src/aspose/note/_internal/onestore/object_space.py`
 - Summary builder: `src/aspose/note/_internal/onestore/summary.py`
 - Spec docs: `docs/ms-onestore/*` and revision parsing doc referenced from code comments
+
+## Layout reference
+
+- Compact layout catalog: `10-onestore/99-layout-reference.md` (FileNodeID catalog for manifests/revisions)
+- Curated docs: `docs/ms-onestore/16-root-file-node-list.md`, `docs/ms-onestore/17-revision-manifest-parsing.md`
+- Raw spec extract: `../ms-onestore_structures_extract.txt` (root file node list + revision manifest constraints)
+

@@ -27,3 +27,9 @@ A file node list can be longer than the committed (visible) portion; the transac
 - Spec docs: `docs/ms-onestore/05-transaction-log.md`
 - Code: `src/aspose/note/_internal/onestore/txn_log.py`
 - Tests: `tests/test_txn_log.py`
+
+## Layout reference
+
+- Compact layout catalog: `10-onestore/99-layout-reference.md` (2.3.3)
+- Raw spec extract: `../ms-onestore_structures_extract.txt` (2.3.3.1 / 2.3.3.2)
+

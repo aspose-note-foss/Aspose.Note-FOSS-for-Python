@@ -47,3 +47,6 @@ Each parser should:
 
 - `src/aspose/note/_internal/onestore/io.py`
 - `src/aspose/note/_internal/onestore/errors.py`
+
+See also: `10-onestore/99-layout-reference.md` (exact binary layouts)
+

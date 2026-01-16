@@ -39,8 +39,19 @@ Optionally (but strongly recommended for MS-ONE):
 - Object space and revision manifest parsing
 - Optional hashed chunk list + file data store parsing
 
+## Layout details (the missing piece)
+
+If you are implementing the parser from scratch, you will need concrete binary layouts (field sizes/encodings). In this repository those details exist, but they are **not** duplicated inside the plan files by default.
+
+Use these sources:
+
+- Compact structure catalog: `10-onestore/99-layout-reference.md`
+- Curated, parser-oriented docs: `docs/ms-onestore/*`
+- Raw spec extract: `../ms-onestore_structures_extract.txt`
+
 ## Reference implementation mapping (this repo)
 
 - OneStore code: `src/aspose/note/_internal/onestore/*`
 - OneStore docs: `docs/ms-onestore/*`
 - OneStore tests: `tests/test_header.py`, `tests/test_txn_log.py`, `tests/test_file_node_list.py`, `tests/test_file_node_core.py`, `tests/test_chunk_refs_and_crc.py`, `tests/test_common_types.py`, `tests/test_object_data_structures.py`, `tests/test_io.py`
+

@@ -34,3 +34,9 @@
 - Spec docs: `docs/ms-onestore/03-header.md`
 - Code: `src/aspose/note/_internal/onestore/header.py`
 - Tests: `tests/test_header.py`
+
+## Layout reference
+
+- Compact layout catalog: `10-onestore/99-layout-reference.md` (Header 2.3.1)
+- Raw spec extract: `../ms-onestore_structures_extract.txt` (Header 2.3.1)
+
