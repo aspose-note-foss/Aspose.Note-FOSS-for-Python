@@ -1,4 +1,4 @@
-# 🗒️ Aspose.Note for Python (Aspose-compatible API)
+# 🗒️ Aspose.Note FOSS for Python
 
 [![CI](https://github.com/aspose-note/aspose-note-python/actions/workflows/ci.yml/badge.svg)](https://github.com/aspose-note/aspose-note-python/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/aspose-note.svg)](https://pypi.org/project/aspose-note/)
