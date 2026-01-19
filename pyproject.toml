@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aspose-note"
-version = "26.1.3"
+version = "26.1.5"
 description = "Aspose.Note-compatible Python API for reading OneNote (.one) files"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,9 +31,9 @@ pdf = ["reportlab>=3.6"]
 dev = ["build>=1.2", "twine>=5.0"]
 
 [project.urls]
-Homepage = "https://github.com/aspose-note/aspose-note-python"
-Repository = "https://github.com/aspose-note/aspose-note-python"
-Issues = "https://github.com/aspose-note/aspose-note-python/issues"
+Homepage = "https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python"
+Repository = "https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python"
+Issues = "https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
