@@ -1,38 +1,53 @@
 ; Aspose.Note - public API logic specification
-; Source of truth: src/aspose/note/model.py, src/aspose/note/enums.py, src/aspose/note/exceptions.py, src/aspose/note/saving/options.py
-; Scope: public members defined in these files only
+; Source of truth: the current exported contracts of aspose.note and aspose.note.saving
+; Scope: only symbols exported by the supported entry points aspose.note and aspose.note.saving
 
 api:
   package: aspose.note
-  source_files[4]: src/aspose/note/model.py,src/aspose/note/enums.py,src/aspose/note/exceptions.py,src/aspose/note/saving/options.py
-  generated_from_date: 2026-03-18
+  supported_entry_points[2]: aspose.note,aspose.note.saving
+  source_contracts[6]: note root exports,note model contract,note enum contract,note exception contract,note.saving exports,note.saving options contract
+  generated_from_date: 2026-03-25
   guarantees:
-    compatibility_goal: mirrors the official Aspose.Note public API shape where practical
-    implementation_state: partial compatibility layer over internal OneNote parser/exporter
-    contract_style: public contract is described in language-agnostic terms; implementation-only notes are kept explicitly marked
+    compatibility_goal: subset-compatible public names and namespaces aligned with Aspose.Note for .NET where implemented
+    implementation_state: partial compatibility layer over an internal OneNote parser and PDF exporter
+    contract_scope: only exported symbols are described here; internal helper symbols that are not re-exported are intentionally omitted
+  exports:
+    aspose.note[33]: FileCorruptedException,IncorrectDocumentStructureException,IncorrectPasswordException,UnsupportedFileFormatException,UnsupportedSaveFormatException,SaveFormat,FileFormat,HorizontalAlignment,TagStatus,NodeType,DocumentVisitor,License,Metered,LoadOptions,Node,NoteTag,ParagraphStyle,TextStyle,TextRun,RichText,Title,NumberList,OutlineElement,Outline,Image,AttachedFile,TableColumn,TableCell,TableRow,Table,Page,PageHistory,Document
+    aspose.note.saving[2]: SaveOptions,PdfSaveOptions
+  non_root_notes[2]:
+    SaveOptions and PdfSaveOptions are intentionally exported only from aspose.note.saving, not from aspose.note
+    CompositeNode and AsposeNoteError exist in source modules but are not part of the supported root public API
 
 enums:
   SaveFormat:
-    type: enum.Enum
+    type: enum
     members[1]{name,value,logic}:
       Pdf,pdf,only supported save format in the current public implementation
 
   FileFormat:
-    type: enum.Enum
-    members[3]{name,value,logic}:
-      OneNote2010,onenote2010,returned unconditionally by Document.FileFormat property
+    type: enum
+    members[4]{name,value,logic}:
+      Unknown,unknown,fallback value used when a file format cannot be recognized or normalized
+      OneNote2010,onenote2010,returned by Document.FileFormat for loaded and in-memory documents
       OneNoteOnline,onenoteonline,reserved compatibility value
       OneNote2007,onenote2007,reserved compatibility value
 
   HorizontalAlignment:
-    type: enum.Enum
+    type: enum
     members[3]{name,value,logic}:
       Left,left,compatibility enum value
       Center,center,compatibility enum value
       Right,right,compatibility enum value
 
+  TagStatus:
+    type: enum
+    members[3]{name,value,logic}:
+      Open,0,default status for tags without a completion timestamp
+      Completed,1,status returned for tags that carry completion metadata or explicit completed status
+      Disabled,2,compatibility enum value for disabled tags
+
   NodeType:
-    type: enum.Enum
+    type: enum
     members[8]{name,value,logic}:
       Document,document,compatibility enum value
       Page,page,compatibility enum value
@@ -44,459 +59,417 @@ enums:
       AttachedFile,attached_file,compatibility enum value
 
 exceptions:
-  AsposeNoteError:
-    base: Exception
-    logic: common base for all library-defined exceptions in this module
-
   FileCorruptedException:
-    base: AsposeNoteError
-    logic: typed marker exception, no custom state or behavior
+    base: Exception
+    logic: typed library exception exported from aspose.note
 
   IncorrectDocumentStructureException:
-    base: AsposeNoteError
-    logic: typed marker exception, no custom state or behavior
+    base: Exception
+    logic: typed library exception exported from aspose.note
 
   IncorrectPasswordException:
-    base: AsposeNoteError
+    base: Exception
     logic: raised by the Document constructor when LoadOptions.DocumentPassword is provided
 
   UnsupportedFileFormatException:
-    base: AsposeNoteError
+    base: Exception
     constructor:
-      signature: (message:string='Unsupported file format', file_format:string|null=null)
+      signature: (message:string='Unsupported file format', file_format:FileFormat|string|null=null)
       logic[2]:
-        passes message to base Exception
-        stores provided file_format into attribute FileFormat
+        passes message to the exception base class
+        normalizes file_format to a FileFormat value and stores it in the read-only FileFormat property
     members:
       FileFormat:
-        type: string|null
-        logic: optional format identifier associated with the failure
+        type: FileFormat
+        logic: normalized format identifier; defaults to FileFormat.Unknown for empty or unrecognized inputs
 
   UnsupportedSaveFormatException:
-    base: AsposeNoteError
-    logic: raised by Document.Save when save arguments do not resolve to PDF output
+    base: Exception
+    logic: raised by Document.Save when the requested target format or target path is not supported
+
+shared_contracts:
+  Node:
+    exported_from: aspose.note
+    pattern: abstract compatibility base for document tree nodes; direct instantiation is rejected
+    properties:
+      ParentNode: {type:Node|null,read_only:true,logic:parent link maintained by tree mutation helpers and title-child assignment}
+      Document: {type:Document|null,read_only:true,logic:walks ParentNode upward until the owning Document is found}
+    methods:
+      Accept:
+        signature: (visitor:DocumentVisitor) -> void
+        logic: dispatches to the node-specific visitor hook sequence
+
+  ChildContainerContract:
+    source: internal abstract CompositeNode compatibility base; behavior is inherited by exported container types
+    applies_to[8]: Document,Page,Outline,OutlineElement,Image,Table,TableCell,TableRow
+    properties:
+      FirstChild: {type:Node|null,read_only:true,logic:first direct child or null}
+      LastChild: {type:Node|null,read_only:true,logic:last direct child or null}
+    methods[6]{name,signature,logic}:
+      AppendChildLast,(node:TNode)->TNode,sets node.ParentNode to self and appends it as the last direct child
+      AppendChildFirst,(node:TNode)->TNode,sets node.ParentNode to self and inserts it as the first direct child
+      InsertChild,(index:int,node:TNode)->TNode,sets node.ParentNode to self and inserts it at the requested index using list semantics
+      RemoveChild,(node:Node)->void,removes the direct child and clears its ParentNode
+      GetEnumerator,()->iterator<Node>,returns a forward iterator over direct children in stored order
+      GetChildNodes,(node_type:type<TNode>)->list<TNode>,returns a depth-first recursive list of descendant nodes matching node_type
+    iteration:
+      logic: direct iteration over an instance yields its direct children in stored order
 
 model:
-  type_aliases:
-    TNode:
-      value: generic node type parameter constrained to Node
-      logic: preserves concrete child type in composite insertion APIs
-
   classes:
     DocumentVisitor:
-      base: object
-      pattern: visitor callbacks for DOM traversal
+      base: reference type
+      pattern: abstract visitor compatibility base; direct instantiation is rejected
       methods[14]{name,signature,logic}:
-        VisitDocumentStart,(document:Document)->None,no-op default implementation
-        VisitDocumentEnd,(document:Document)->None,no-op default implementation
-        VisitPageStart,(page:Page)->None,no-op default implementation
-        VisitPageEnd,(page:Page)->None,no-op default implementation
-        VisitTitleStart,(title:Title)->None,no-op default implementation
-        VisitTitleEnd,(title:Title)->None,no-op default implementation
-        VisitOutlineStart,(outline:Outline)->None,no-op default implementation
-        VisitOutlineEnd,(outline:Outline)->None,no-op default implementation
-        VisitOutlineElementStart,(outline_element:OutlineElement)->None,no-op default implementation
-        VisitOutlineElementEnd,(outline_element:OutlineElement)->None,no-op default implementation
-        VisitRichTextStart,(rich_text:RichText)->None,no-op default implementation
-        VisitRichTextEnd,(rich_text:RichText)->None,no-op default implementation
-        VisitImageStart,(image:Image)->None,no-op default implementation
-        VisitImageEnd,(image:Image)->None,no-op default implementation
+        VisitDocumentStart,(document:Document)->void,no-op default implementation
+        VisitDocumentEnd,(document:Document)->void,no-op default implementation
+        VisitPageStart,(page:Page)->void,no-op default implementation
+        VisitPageEnd,(page:Page)->void,no-op default implementation
+        VisitTitleStart,(title:Title)->void,no-op default implementation
+        VisitTitleEnd,(title:Title)->void,no-op default implementation
+        VisitOutlineStart,(outline:Outline)->void,no-op default implementation
+        VisitOutlineEnd,(outline:Outline)->void,no-op default implementation
+        VisitOutlineElementStart,(outline_element:OutlineElement)->void,no-op default implementation
+        VisitOutlineElementEnd,(outline_element:OutlineElement)->void,no-op default implementation
+        VisitRichTextStart,(rich_text:RichText)->void,no-op default implementation
+        VisitRichTextEnd,(rich_text:RichText)->void,no-op default implementation
+        VisitImageStart,(image:Image)->void,no-op default implementation
+        VisitImageEnd,(image:Image)->void,no-op default implementation
 
     License:
-      base: object
+      base: reference type
       purpose: compatibility stub
       methods:
         SetLicense:
-          signature: (license_source:object) -> void
-          logic: accepts argument but performs no operation
+          signature: (license_source:any) -> void
+          logic: accepts the argument and performs no operation
 
     Metered:
-      base: object
+      base: reference type
       purpose: compatibility stub
       methods:
         SetMeteredKey:
           signature: (public_key:string, private_key:string) -> void
-          logic: accepts keys but performs no operation
-
-    SaveOptions:
-      base: object
-      purpose: public base class for save options
-      members:
-        SaveFormat: {type:SaveFormat,logic:target output format associated with the concrete options instance; current public implementation uses SaveFormat.Pdf}
-        PageIndex: {type:integer,default:0,logic:index of the first page to render when the format supports page ranges}
-        PageCount: {type:integer|null,default:null,logic:number of pages to render; null means all pages in the current implementation}
-        FontsSubsystem: {type:object|null,default:null,logic:reserved compatibility slot for font-resolution settings}
-
-    PdfSaveOptions:
-      base: SaveOptions
-      constructor:
-        signature: (save_format:SaveFormat=SaveFormat.Pdf, PageIndex:integer=0, PageCount:integer|null=null, FontsSubsystem:object|null=null, TagIconDir:string|null=null, TagIconSize:number|null=null, TagIconGap:number|null=null, ImageCompression:object|null=null, JpegQuality:integer|null=null, PageSettings:object|null=null, PageSplittingAlgorithm:object|null=null)
-      members:
-        TagIconDir: {type:string|null,default:null,logic:optional directory used to resolve external tag icons during PDF rendering}
-        TagIconSize: {type:number|null,default:null,logic:optional rendered tag icon size in points}
-        TagIconGap: {type:number|null,default:null,logic:optional horizontal gap between tag icon and text}
-        ImageCompression: {type:object|null,default:null,logic:reserved compatibility member; current renderer does not use this value}
-        JpegQuality: {type:integer|null,default:null,logic:reserved compatibility member; current renderer does not use this value}
-        PageSettings: {type:object|null,default:null,logic:reserved compatibility member; current renderer does not use this value}
-        PageSplittingAlgorithm: {type:object|null,default:null,logic:reserved compatibility member; current renderer does not use this value}
+          logic: accepts the keys and performs no operation
 
     LoadOptions:
-      kind: dataclass
-      base: object
+      kind: record-like type
+      base: reference type
       members:
-        DocumentPassword:
-          type: string|null
-          default: null
-          logic: if non-empty, the Document constructor raises IncorrectPasswordException
-        LoadHistory:
-          type: boolean
-          default: false
-          logic: stored only; current Document loader does not use this flag
-
-    Node:
-      kind: dataclass
-      base: object
-      members:
-        ParentNode:
-          type: Node|None
-          default: null
-          logic: maintained by CompositeNode insertion/removal methods
-      properties:
-        Document:
-          type: Document|None
-          logic[2]:
-            walks ParentNode chain upward until Document instance
-            returns null if node is detached from a Document tree
-      methods:
-        Accept:
-          signature: (visitor:DocumentVisitor) -> None
-          logic: delegates to protected _accept; leaf Node default traversal is no-op
-
-    CompositeNode:
-      kind: dataclass
-      base: Node
-      internal_members:
-        _children:
-          type: list[Node]
-          default: empty list
-          logic: ordered child storage used by traversal and collection APIs
-      properties:
-        FirstChild:
-          type: Node|None
-          logic: returns first child or null when list is empty
-        LastChild:
-          type: Node|None
-          logic: returns last child or null when list is empty
-      methods:
-        AppendChildLast:
-          signature: (node:TNode) -> TNode
-          logic[2]:
-            sets node.ParentNode to self
-            appends node to end of _children and returns same node
-        AppendChildFirst:
-          signature: (node:TNode) -> TNode
-          logic[2]:
-            sets node.ParentNode to self
-            inserts node at index 0 and returns same node
-        InsertChild:
-          signature: (index:int, node:TNode) -> TNode
-          logic[2]:
-            sets node.ParentNode to self
-            inserts at requested index using list semantics and returns node
-        RemoveChild:
-          signature: (node:Node) -> void
-          logic[2]:
-            removes node from _children
-            signals an argument-related error if node is not present
-            sets removed node.ParentNode to null
-        GetEnumerator:
-          signature: () -> iterator<Node>
-          logic: returns iterator over _children
-        Iterate:
-          signature: () -> iterator<Node>
-          logic: returns iterator over _children
-        GetChildNodes:
-          signature: (node_type:node-kind<TNode>) -> sequence<TNode>
-          logic[3]:
-            performs depth-first recursive walk starting from direct children of self
-            collects nodes that satisfy isinstance(node, node_type)
-            does not include self in results
+        DocumentPassword: {type:string|null,default:null,logic:if non-empty, the Document constructor raises IncorrectPasswordException}
+        LoadHistory: {type:boolean,default:false,logic:when true, the loader reconstructs page history and Document.GetPageHistory returns populated PageHistory objects}
 
     NoteTag:
-      kind: dataclass
-      base: Node
-      members[6]{name,type,default,logic}:
-        shape,int|None,null,raw parser value
-        label,str|None,null,human-readable tag label
-        text_color,int|None,null,raw color value
-        highlight_color,int|None,null,raw color value
-        created,int|None,null,raw timestamp/integer metadata
-        completed,int|None,null,raw timestamp/integer metadata
+      base: reference type
+      construction: no public constructor; instances are created through documented Create* factory methods
+      members:
+        Label: {type:string|null,read_only:false,logic:human-readable tag label}
+        Icon: {type:integer|null,read_only:false,logic:numeric tag icon identifier}
+        Status: {type:TagStatus,read_only:true,logic:returns explicit tag status when available, otherwise derives Open vs Completed from CompletedTime}
+        Highlight: {type:integer|null,read_only:false,logic:raw highlight color value}
+        CreationTime: {type:datetime|null,read_only:false,logic:tag creation timestamp; integer inputs are normalized to datetime}
+        CompletedTime: {type:datetime|null,read_only:true,logic:completion timestamp when present}
+        FontColor: {type:integer|null,read_only:false,logic:raw font color value}
       methods:
-        CreateYellowStar:
-          signature: () -> NoteTag
-          type: staticmethod
-          logic: returns new NoteTag(shape=None,label='Yellow Star')
+        CreateYellowStar: {kind:static factory,signature:(label:string|null=null)->NoteTag,logic:creates a note tag with icon 13 and default label 'Yellow Star'}
+        CreateQuestionMark: {kind:static factory,signature:(label:string|null=null)->NoteTag,logic:creates a note tag with icon 15 and default label 'Question Mark'}
+        CreateMusicalNote: {kind:static factory,signature:(label:string|null=null)->NoteTag,logic:creates a note tag with icon 121 and default label 'Musical Note'}
+
+    ParagraphStyle:
+      base: reference type
+      members:
+        FontName: {type:string|null,default:null,logic:paragraph-level default font family}
+        FontSize: {type:number|null,default:null,logic:paragraph-level default font size in points}
+        FontColor: {type:integer|null,default:null,logic:paragraph-level default font color}
+        Highlight: {type:integer|null,default:null,logic:paragraph-level default highlight color}
+        IsBold: {type:boolean,default:false,logic:bold style flag}
+        IsItalic: {type:boolean,default:false,logic:italic style flag}
+        IsUnderline: {type:boolean,default:false,logic:underline style flag}
+        IsStrikethrough: {type:boolean,default:false,logic:strikethrough style flag}
+        IsSuperscript: {type:boolean,default:false,logic:superscript style flag}
+        IsSubscript: {type:boolean,default:false,logic:subscript style flag}
+      properties:
+        FontStyle: {type:integer,read_only:true,logic:bit-mask composed from bold=1, italic=2, underline=4, strikethrough=8}
+        Default: {type:ParagraphStyle,static_accessor:true,logic:returns a new default paragraph style instance}
 
     TextStyle:
-      kind: dataclass
-      base: Node
-      members[14]{name,type,default,logic}:
-        IsHyperlink,bool,false,boolean shortcut for hyperlink presence
-        HyperlinkAddress,str|None,null,hyperlink URL
-        HorizontalAlignment,HorizontalAlignment|None,null,paragraph-alignment compatibility value used by current renderer
-        FontName,str|None,null,font family name
-        FontSize,float|None,null,font size in points
-        FontColor,int|None,null,raw color value
-        HighlightColor,int|None,null,raw color value
-        LanguageId,int|None,null,language identifier
-        Bold,bool,false,style flag
-        Italic,bool,false,style flag
-        Underline,bool,false,style flag
-        Strikethrough,bool,false,style flag
-        Superscript,bool,false,style flag
-        Subscript,bool,false,style flag
-      compatibility_properties:
-        IsBold: {type:bool,logic:alias to Bold}
-        IsItalic: {type:bool,logic:alias to Italic}
-        IsUnderline: {type:bool,logic:alias to Underline}
-        IsStrikethrough: {type:bool,logic:alias to Strikethrough}
-        IsSuperscript: {type:bool,logic:alias to Superscript}
-        IsSubscript: {type:bool,logic:alias to Subscript}
-        Highlight: {type:int|None,logic:alias to HighlightColor}
-        Language: {type:integer|null,logic:alias to LanguageId in the current implementation}
-      static_properties:
-        Default: {type:TextStyle,logic:returns a new default style instance with en-US language id compatibility value}
-        DefaultMsOneNoteTitleTextStyle: {type:TextStyle,logic:returns a new title-text style instance}
-        DefaultMsOneNoteTitleDateStyle: {type:TextStyle,logic:returns a new title-date style instance}
-        DefaultMsOneNoteTitleTimeStyle: {type:TextStyle,logic:returns a new title-time style instance}
+      base: reference type
+      members:
+        IsHyperlink: {type:boolean,default:false,logic:boolean hyperlink marker}
+        HyperlinkAddress: {type:string|null,default:null,logic:hyperlink URL}
+        FontName: {type:string|null,default:null,logic:font family name}
+        FontSize: {type:number|null,default:null,logic:font size in points}
+        FontColor: {type:integer|null,default:null,logic:raw text color value}
+        Highlight: {type:integer|null,default:null,logic:raw highlight color value}
+        Language: {type:integer|null,default:null,logic:language identifier}
+        IsBold: {type:boolean,default:false,logic:bold style flag}
+        IsItalic: {type:boolean,default:false,logic:italic style flag}
+        IsUnderline: {type:boolean,default:false,logic:underline style flag}
+        IsStrikethrough: {type:boolean,default:false,logic:strikethrough style flag}
+        IsSuperscript: {type:boolean,default:false,logic:superscript style flag}
+        IsSubscript: {type:boolean,default:false,logic:subscript style flag}
+        IsHidden: {type:boolean,default:false,logic:hidden-text compatibility flag}
+        IsMathFormatting: {type:boolean,default:false,logic:math-formatting compatibility flag}
+      properties:
+        FontStyle: {type:integer,read_only:true,logic:bit-mask composed from bold=1, italic=2, underline=4, strikethrough=8}
+        Default: {type:TextStyle,static_accessor:true,logic:returns a new default text style instance with Language=1033}
+        DefaultMsOneNoteTitleTextStyle: {type:TextStyle,static_accessor:true,logic:returns a title-text default with FontSize=20.0, IsBold=true, Language=1033}
+        DefaultMsOneNoteTitleDateStyle: {type:TextStyle,static_accessor:true,logic:returns a title-date default with FontSize=11.0 and Language=1033}
+        DefaultMsOneNoteTitleTimeStyle: {type:TextStyle,static_accessor:true,logic:returns a title-time default with FontSize=11.0 and Language=1033}
 
     TextRun:
-      kind: dataclass
-      base: Node
+      kind: record-like type
+      base: reference type
       members:
-        Text: {type:str,default:'',logic:text slice belonging to this run}
-        Style: {type:TextStyle,default:TextStyle(),logic:run-level style object}
-        Start: {type:int|None,default:null,logic:inclusive start offset in parent RichText.Text}
-        End: {type:int|None,default:null,logic:exclusive end offset in parent RichText.Text}
+        Text: {type:string,default:'',logic:text segment for the run}
+        Style: {type:TextStyle,default:new TextStyle instance,logic:run-level style object}
 
     RichText:
-      kind: dataclass
-      base: CompositeNode
+      base: Node
+      constructor:
+        signature: (Text:string='', TextRuns:list<TextRun>|null=null, ParagraphStyle:ParagraphStyle|null=null, Alignment:HorizontalAlignment|null=null, Tags:list<NoteTag>|null=null, LastModifiedTime:datetime|null=null, SpaceBefore:number|null=null, SpaceAfter:number|null=null, LineSpacing:number|null=null)
       members:
-        Text: {type:str,default:'',logic:plain text content}
-        Runs: {type:list[TextRun],default:[],logic:optional style segmentation metadata}
-        ParagraphStyle: {type:TextStyle,default:TextStyle(),logic:paragraph-level fallback style used when run style does not supply a setting}
-        FontSize: {type:float|None,default:null,logic:fallback font size}
-        LastModifiedTime: {type:datetime|None,default:null,logic:reserved compatibility member; current loader does not populate it}
-        SpaceBefore: {type:float|None,default:null,logic:reserved compatibility member for paragraph spacing before text}
-        SpaceAfter: {type:float|None,default:null,logic:reserved compatibility member for paragraph spacing after text}
-        LineSpacing: {type:float|None,default:null,logic:reserved compatibility member for line spacing}
-        Tags: {type:list[NoteTag],default:[],logic:tag metadata associated with text}
+        LastModifiedTime: {type:datetime|null,default:null,logic:reserved compatibility member populated when available}
+        SpaceBefore: {type:number|null,default:null,logic:reserved compatibility member for paragraph spacing before text}
+        SpaceAfter: {type:number|null,default:null,logic:reserved compatibility member for paragraph spacing after text}
+        LineSpacing: {type:number|null,default:null,logic:reserved compatibility member for line spacing}
       properties:
-        TextRuns: {type:sequence<TextRun>,logic:alias to Runs using the canonical public member name}
-        Length: {type:int,logic:returns len(Text)}
-        Alignment: {type:HorizontalAlignment|None,logic:reads paragraph alignment from ParagraphStyle first and then from run styles; setting it updates ParagraphStyle and fills missing run alignments}
-        IsTitleText: {type:bool,logic:true when this node is the Title.TitleText child of its parent Title}
-        IsTitleDate: {type:bool,logic:true when this node is the Title.TitleDate child of its parent Title}
-        IsTitleTime: {type:bool,logic:true when this node is the Title.TitleTime child of its parent Title}
+        Text: {type:string,read_only:false,logic:plain text content; assigning a new value rebuilds the run list as a single run when text is non-empty}
+        TextRuns: {type:list<TextRun>,read_only:true,logic:mutable list of runs exposed by read-only property; callers may mutate the list in place but cannot replace the property reference}
+        ParagraphStyle: {type:ParagraphStyle,read_only:false,logic:paragraph-level default style used when constructing or resetting runs}
+        Tags: {type:list<NoteTag>,read_only:true,logic:mutable list of note tags exposed by read-only property}
+        Length: {type:integer,read_only:true,logic:returns the character count of Text}
+        Alignment: {type:HorizontalAlignment|null,read_only:false,logic:rich-text alignment value stored directly on the RichText node}
+        IsTitleText: {type:boolean,read_only:true,logic:true when this node is the TitleText child of its parent Title}
+        IsTitleDate: {type:boolean,read_only:true,logic:true when this node is the TitleDate child of its parent Title}
+        IsTitleTime: {type:boolean,read_only:true,logic:true when this node is the TitleTime child of its parent Title}
       methods:
-        Append:
-          signature: (text:str, style:TextStyle|None=None) -> RichText
-          logic[3]:
-            appends text argument to Text string
-            if style is provided then appends TextRun(Text=text,Style=style) to Runs
-            returns self for fluent chaining
-        AppendFront:
-          signature: (text:str, style:TextStyle|None=None) -> RichText
-          logic: inserts text at the beginning and returns self
-        Clear:
-          signature: () -> RichText
-          logic: clears Text and Runs and returns self
-        GetEnumerator:
-          signature: () -> Iterator[str]
-          logic: returns iterator over characters of Text
-        Insert:
-          signature: (index:int, text:str, style:TextStyle|None=None) -> RichText
-          logic: inserts text at bounded index, normalizes current run model to a single run, and returns self
-        Remove:
-          signature: (start:int, count:int|None=None) -> RichText
-          logic: removes text from bounded range, normalizes current run model to a single run when needed, and returns self
-        Replace:
-          signature: (old_value:str, new_value:str, style:TextStyle|None=None) -> RichText
-          logic[4]:
-            rejects invalid arguments when old_value is empty or when a required string argument is null, using the target language's standard argument-validation exception model
-            replaces all occurrences of old_value in Text with new_value
-            when style is provided replacement result is represented by a single TextRun using that style
-            returns self for fluent chaining
-        Trim:
-          signature: () -> RichText
-          logic: trims leading and trailing whitespace from Text and returns self
-        TrimStart:
-          signature: () -> RichText
-          logic: trims leading whitespace from Text and returns self
-        TrimEnd:
-          signature: () -> RichText
-          logic: trims trailing whitespace from Text and returns self
+        Append: {signature:(text:string, style:TextStyle|null=null)->RichText,logic:appends text using the provided style or the current default style and returns self}
+        AppendFront: {signature:(text:string, style:TextStyle|null=null)->RichText,logic:inserts text at the beginning and returns self}
+        Clear: {signature:()->RichText,logic:clears Text and TextRuns and returns the same instance}
+        GetEnumerator: {signature:()->iterator<string>,logic:returns a forward iterator over the characters of Text}
+        IndexOf: {signature:(value:string, startIndex:int=0, count:int|null=null, comparison:string|null=null)->int,logic:finds a substring, with optional count limit and case-insensitive matching when comparison ends with 'IgnoreCase'}
+        Insert: {signature:(index:int, text:string, style:TextStyle|null=null)->RichText,logic:inserts text at a bounded index and normalizes the result to a single run}
+        Remove: {signature:(start:int, count:int|null=null)->RichText,logic:removes text from a bounded range and normalizes the result to a single run when text remains}
+        Replace: {signature:(old_value:string, new_value:string, style:TextStyle|null=null)->RichText,logic:replaces all occurrences, rejects null arguments and empty old_value, and normalizes the result to a single run}
+        Trim: {signature:()->RichText,logic:trims leading and trailing whitespace and returns self}
+        TrimStart: {signature:()->RichText,logic:trims leading whitespace and returns self}
+        TrimEnd: {signature:()->RichText,logic:trims trailing whitespace and returns self}
 
     Title:
-      kind: dataclass
-      base: CompositeNode
-      members:
-        TitleText: {type:RichText|None,default:null,logic:main page title text node reference}
-        TitleDate: {type:RichText|None,default:null,logic:optional title date rich text reference}
-        TitleTime: {type:RichText|None,default:null,logic:optional title time rich text reference}
-
-    OutlineElement:
-      kind: dataclass
-      base: CompositeNode
-      members:
-        Tags: {type:list[NoteTag],default:[],logic:tags attached to outline element}
-        IndentLevel: {type:int,default:0,logic:nesting level in list/outline}
-        NumberList: {type:NumberList|None,default:null,logic:numbering metadata when parsed}
-
-    Outline:
-      kind: dataclass
-      base: CompositeNode
-      members:
-        X: {type:float|None,default:null,logic:horizontal position}
-        Y: {type:float|None,default:null,logic:vertical position}
-        Width: {type:float|None,default:null,logic:render width}
-
-    Image:
-      kind: dataclass
-      base: CompositeNode
-      members:
-        FileName: {type:str|None,default:null,logic:original file name when available}
-        FilePath: {type:str|None,default:null,logic:reserved compatibility member; current loader usually does not populate it}
-        Format: {type:str|None,default:null,logic:reserved compatibility member for image format description}
-        Bytes: {type:bytes,default:b'',logic:binary image payload}
-        Width: {type:float|None,default:null,logic:image width}
-        Height: {type:float|None,default:null,logic:image height}
-        OriginalWidth: {type:float|None,default:null,logic:original width before resizing; current loader mirrors Width when original size is unknown}
-        OriginalHeight: {type:float|None,default:null,logic:original height before resizing; current loader mirrors Height when original size is unknown}
-        HorizontalOffset: {type:float|None,default:null,logic:reserved compatibility member for horizontal offset}
-        VerticalOffset: {type:float|None,default:null,logic:reserved compatibility member for vertical offset}
-        HorizontalAlignment: {type:HorizontalAlignment|null,default:null,logic:current implementation field for alignment}
-        IsBackground: {type:bool,default:false,logic:reserved compatibility member}
-        LastModifiedTime: {type:datetime|None,default:null,logic:reserved compatibility member; current loader does not populate it}
-        AlternativeTextTitle: {type:str|None,default:null,logic:alternate title text}
-        AlternativeTextDescription: {type:str|None,default:null,logic:alternate description text}
-        HyperlinkUrl: {type:str|None,default:null,logic:associated hyperlink}
-        Tags: {type:list[NoteTag],default:[],logic:tags attached to image}
+      base: Node
+      constructor:
+        signature: (TitleText:RichText|null=null, TitleDate:RichText|null=null, TitleTime:RichText|null=null)
       properties:
-        Alignment: {type:HorizontalAlignment|null,logic:public alias to HorizontalAlignment}
+        TitleText: {type:RichText|null,read_only:false,logic:main page title rich-text child; assigning updates the child's ParentNode}
+        TitleDate: {type:RichText|null,read_only:false,logic:optional title-date rich-text child; assigning updates the child's ParentNode}
+        TitleTime: {type:RichText|null,read_only:false,logic:optional title-time rich-text child; assigning updates the child's ParentNode}
       methods:
-        Replace:
-          signature: (image:Image) -> None
-          logic: copies current public image metadata and payload fields from source image
-
-    AttachedFile:
-      kind: dataclass
-      base: CompositeNode
-      members:
-        FileName: {type:str|None,default:null,logic:attached file name}
-        Bytes: {type:bytes,default:b'',logic:attached file payload}
-        Tags: {type:list[NoteTag],default:[],logic:tags attached to file}
+        GetEnumerator: {signature:()->iterator<Node>,logic:returns a forward iterator over non-null title children in TitleText, TitleDate, TitleTime order}
+        GetChildNodes: {signature:(node_type:type<TNode>)->list<TNode>,logic:returns a depth-first recursive list of matching descendants under the title children}
 
     NumberList:
-      kind: dataclass
-      base: Node
-      purpose: compatibility container for parsed list metadata
+      kind: record-like type
+      base: reference type
       members:
-        Format: {type:str|None,default:null,logic:list formatting token from parser}
-        Restart: {type:int|None,default:null,logic:restart index for numbering}
-        IsNumbered: {type:bool,default:false,logic:true for numbered list semantics}
+        Format: {type:string|null,default:null,logic:numbered-list header format string; if it contains '{0}' the number is formatted into it}
+        NumberFormat: {type:string|null,default:null,logic:compatibility slot for the list numbering format descriptor}
+        Font: {type:string|null,default:null,logic:numbering font family}
+        FontSize: {type:number|null,default:null,logic:numbering font size}
+        FontColor: {type:integer|null,default:null,logic:numbering font color}
+        IsBold: {type:boolean,default:false,logic:numbering bold flag}
+        IsItalic: {type:boolean,default:false,logic:numbering italic flag}
+        LastModifiedTime: {type:datetime|null,default:null,logic:reserved compatibility timestamp}
+        Restart: {type:integer|null,default:null,logic:restart index for numbering}
+      methods:
+        GetNumberedListHeader: {signature:(number:int)->string,logic:returns '' when Format is null, otherwise formats the number into Format when '{0}' is present or returns Format unchanged}
+
+    OutlineElement:
+      base: ChildContainerContract
+      members:
+        NumberList: {type:NumberList|null,default:null,logic:numbering metadata for the outline element}
+
+    Outline:
+      base: ChildContainerContract
+      members:
+        HorizontalOffset: {type:number|null,default:null,logic:horizontal position}
+        VerticalOffset: {type:number|null,default:null,logic:vertical position}
+        MaxWidth: {type:number|null,default:null,logic:maximum render width}
+        MaxHeight: {type:number|null,default:null,logic:maximum render height}
+        MinWidth: {type:number|null,default:null,logic:minimum render width}
+        ReservedWidth: {type:number|null,default:null,logic:reserved width metadata}
+        IndentPosition: {type:number|null,default:null,logic:indent position metadata}
+        DescendantsCannotBeMoved: {type:boolean,default:false,logic:compatibility flag for outline movement restrictions}
+        LastModifiedTime: {type:datetime|null,default:null,logic:reserved compatibility timestamp}
+
+    Image:
+      base: ChildContainerContract
+      constructor:
+        signature: (FileName:string|null=null, FilePath:string|null=null, Format:string|null=null, Bytes:binary|null=null, Width:number|null=null, Height:number|null=null, OriginalWidth:number|null=null, OriginalHeight:number|null=null, HorizontalOffset:number|null=null, VerticalOffset:number|null=null, Alignment:HorizontalAlignment|null=null, IsBackground:boolean=false, LastModifiedTime:datetime|null=null, AlternativeTextTitle:string|null=null, AlternativeTextDescription:string|null=null, HyperlinkUrl:string|null=null, Tags:list<NoteTag>|null=null)
+      properties:
+        FileName: {type:string|null,read_only:true,logic:original file name when available}
+        FilePath: {type:string|null,read_only:true,logic:reserved compatibility member}
+        Format: {type:string|null,read_only:true,logic:reserved compatibility image format description}
+        Bytes: {type:binary,read_only:true,logic:binary image payload}
+        Width: {type:number|null,read_only:false,logic:render width}
+        Height: {type:number|null,read_only:false,logic:render height}
+        OriginalWidth: {type:number|null,read_only:true,logic:original width before resizing when known}
+        OriginalHeight: {type:number|null,read_only:true,logic:original height before resizing when known}
+        HorizontalOffset: {type:number|null,read_only:false,logic:horizontal offset metadata}
+        VerticalOffset: {type:number|null,read_only:false,logic:vertical offset metadata}
+        Alignment: {type:HorizontalAlignment|null,read_only:false,logic:public alignment property; no public HorizontalAlignment alias is exposed}
+        IsBackground: {type:boolean,read_only:false,logic:background-image compatibility flag}
+        LastModifiedTime: {type:datetime|null,read_only:false,logic:reserved compatibility timestamp}
+        AlternativeTextTitle: {type:string|null,read_only:false,logic:alternative title text}
+        AlternativeTextDescription: {type:string|null,read_only:false,logic:alternative description text}
+        HyperlinkUrl: {type:string|null,read_only:false,logic:associated hyperlink URL}
+        Tags: {type:list<NoteTag>,read_only:true,logic:mutable tag list exposed by read-only property}
+      methods:
+        Replace: {signature:(image:Image)->void,logic:copies the public metadata, payload and tags from image into the current instance}
+
+    AttachedFile:
+      base: Node
+      constructor:
+        signature: (FileName:string|null=null, Bytes:binary|null=null, Tags:list<NoteTag>|null=null)
+      properties:
+        FileName: {type:string|null,read_only:true,logic:attached file name}
+        Bytes: {type:binary,read_only:true,logic:attached file payload}
+        Tags: {type:list<NoteTag>,read_only:true,logic:mutable tag list exposed by read-only property}
+
+    TableColumn:
+      kind: record-like type
+      base: reference type
+      members:
+        Width: {type:number|null,default:null,logic:column width}
+        LockedWidth: {type:boolean,default:false,logic:column-width lock flag}
 
     TableCell:
-      kind: dataclass
-      base: CompositeNode
+      base: ChildContainerContract
       logic: structural container without extra public members
 
     TableRow:
-      kind: dataclass
-      base: CompositeNode
+      base: ChildContainerContract
       logic: structural container without extra public members
 
     Table:
-      kind: dataclass
-      base: CompositeNode
-      members:
-        Tags: {type:list[NoteTag],default:[],logic:tags attached to table}
-        ColumnWidths: {type:list[float],default:[],logic:parsed column width metadata}
-        BordersVisible: {type:bool,default:true,logic:table border visibility flag}
+      base: ChildContainerContract
+      constructor:
+        signature: (Tags:list<NoteTag>|null=null, Columns:list<TableColumn>|null=null, IsBordersVisible:boolean=true, LastModifiedTime:datetime|null=null)
+      properties:
+        Tags: {type:list<NoteTag>,read_only:true,logic:mutable table tag list exposed by read-only property}
+        Columns: {type:list<TableColumn>,read_only:true,logic:mutable table column list exposed by read-only property}
+        IsBordersVisible: {type:boolean,read_only:false,logic:table border visibility flag}
+        LastModifiedTime: {type:datetime|null,read_only:false,logic:reserved compatibility timestamp}
 
     Page:
-      kind: dataclass
-      base: CompositeNode
+      kind: record-like type
+      base: ChildContainerContract
       members:
-        Title: {type:Title|None,default:null,logic:page title object reference}
-        Author: {type:str|None,default:null,logic:page author}
-        CreationTime: {type:datetime|None,default:null,logic:page creation timestamp}
-        LastModifiedTime: {type:datetime|None,default:null,logic:page modification timestamp}
-        Level: {type:int|None,default:null,logic:page hierarchy level populated from PageNode/PageMetaData when present, including OneNote subpage levels}
-        BackgroundColor: {type:int|None,default:null,logic:reserved compatibility member}
-        Margin: {type:Any|None,default:null,logic:reserved compatibility member}
-        SizeType: {type:Any|None,default:null,logic:reserved compatibility member}
-        PageLayoutSize: {type:Any|None,default:null,logic:reserved compatibility member}
-        IsConflictPage: {type:bool,default:false,logic:reserved compatibility member}
-        PageContentRevisionSummary: {type:Any|None,default:null,logic:reserved compatibility member}
+        Title: {type:Title|null,default:null,logic:page title object reference}
+        Author: {type:string|null,default:null,logic:page author}
+        CreationTime: {type:datetime|null,default:null,logic:page creation timestamp}
+        LastModifiedTime: {type:datetime|null,default:null,logic:page modification timestamp}
+        Level: {type:integer|null,default:null,logic:page hierarchy level including OneNote subpage levels when present}
+        BackgroundColor: {type:integer|null,default:null,logic:reserved compatibility member}
+        Margin: {type:any|null,default:null,logic:reserved compatibility member}
+        SizeType: {type:any|null,default:null,logic:reserved compatibility member}
+        PageLayoutSize: {type:any|null,default:null,logic:reserved compatibility member}
+        IsConflictPage: {type:boolean,default:false,logic:reserved compatibility member}
+        PageContentRevisionSummary: {type:any|null,default:null,logic:reserved compatibility member}
       methods:
         Clone:
-          signature: (cloneHistory:boolean=false, compatibility_options:object|null=null) -> Page
+          signature: (cloneHistory:boolean=false) -> Page
           logic[3]:
-            performs a deep structural clone of the page subtree and resets ParentNode of the clone root to null
-            cloneHistory parameter is accepted for compatibility with the canonical public contract, but page-history objects are not modeled separately in the current implementation
-            compatibility-only options may be accepted and mapped onto the cloneHistory behavior by a concrete runtime
+            performs a deep structural clone of the page subtree and clears ParentNode on the cloned root
+            cloneHistory is accepted for .NET-shape compatibility but does not alter cloning behavior in the current implementation
+            the reference implementation also accepts a legacy named argument deep as an alias for cloneHistory; any other unexpected named argument raises an argument error
+
+    PageHistory:
+      base: reference type
+      constructor:
+        signature: (current:Page)
+      properties:
+        Count: {type:integer,read_only:true,logic:number of historical versions stored in the collection, excluding Current}
+        Current: {type:Page,read_only:true,logic:current published page version associated with the history collection}
+        IsReadOnly: {type:boolean,read_only:true,logic:always false in the current implementation}
+      methods:
+        Add: {signature:(page:Page)->void,logic:appends a historical version}
+        AddRange: {signature:(pages:list<Page>)->void,logic:extends the history with multiple versions}
+        Clear: {signature:()->void,logic:removes all historical versions}
+        Contains: {signature:(page:Page)->bool,logic:true when page is present among historical versions}
+        CopyTo: {signature:(target:list<Page>, index:int)->void,logic:copies the stored historical versions into target starting at index}
+        GetEnumerator: {signature:()->iterator<Page>,logic:returns a forward iterator over historical versions only}
+        IndexOf: {signature:(page:Page)->int,logic:returns the index of page among historical versions or -1 if absent}
+        Insert: {signature:(index:int, page:Page)->void,logic:inserts a historical version at the requested index}
+        Remove: {signature:(page:Page)->bool,logic:removes page from historical versions and reports whether removal occurred}
+        RemoveAt: {signature:(index:int)->void,logic:removes the historical version at index}
+        RemoveRange: {signature:(index:int, count:int)->void,logic:removes a contiguous slice of historical versions}
+      collection_behavior:
+        indexer_get: {signature:(index:int)->Page,logic:returns a historical version by index}
+        indexer_set: {signature:(index:int, value:Page)->void,logic:replaces a historical version by index}
+        iteration: {logic:iterating over PageHistory yields historical versions only, in stored order}
+        length: {logic:the collection length equals Count}
 
     Document:
-      kind: dataclass_like
-      base: CompositeNode
+      base: ChildContainerContract
       constructor:
         signature: (source:string|path|stream|null=null, load_options:LoadOptions|null=null)
         logic[8]:
           initializes DisplayName and CreationTime to null
-          if source is null returns empty Document
+          if source is null returns an empty Document
           if load_options.DocumentPassword is provided raises IncorrectPasswordException
-          imports internal onenote parser lazily
-          loads parser document by path (onenote.Document.open) for str/Path source
-          loads parser document by stream (onenote.Document.from_stream) otherwise
-          stores loaded document display name in DisplayName
-          materializes all current published pages from the available page content object spaces and appends them to children in section topology order when that order can be resolved
+          loads the internal implementation on demand
+          loads OneNote data from a document location or from a stream-like source
+          stores the loaded display name in DisplayName
+          materializes current published pages as direct children
+          when LoadOptions.LoadHistory is true, builds PageHistory objects keyed to the current pages
       members:
-        DisplayName:
-          type: str|None
-          default: null
-          logic: populated from underlying parser document when loaded from source
-        CreationTime:
-          type: datetime|None
-          default: null
-          logic: currently not assigned in constructor
+        DisplayName: {type:string|null,default:null,logic:loaded document display name when available}
+        CreationTime: {type:datetime|null,default:null,logic:reserved compatibility member; currently not assigned during load}
       properties:
-        FileFormat:
-          type: FileFormat
-          logic: always returns FileFormat.OneNote2010
+        FileFormat: {type:FileFormat,read_only:true,logic:always returns FileFormat.OneNote2010}
       methods:
-        Count:
-          signature: () -> int
-          logic: returns len(_children)
-        DetectLayoutChanges:
-          signature: () -> None
-          logic: no-op compatibility method
-        GetPageHistory:
-          signature: (page:Page) -> list[Page]
-          logic: returns the loaded published history for the provided page when LoadOptions.LoadHistory=true, otherwise returns a single-item list containing the provided page
+        DetectLayoutChanges: {signature:()->void,logic:no-op compatibility method}
+        GetPageHistory: {signature:(page:Page)->PageHistory,logic:returns the page history object for page; without loaded history it returns PageHistory(page) with no historical versions}
         Save:
-          signature: (target:str|Path|BinaryIO, format_or_options:Any=None) -> None
-          format_resolution_logic[5]:
-            if format_or_options is null and target is a file path with .pdf extension then use SaveFormat.Pdf
-            if format_or_options is null and target is stream-like then use SaveFormat.Pdf
-            if format_or_options equals SaveFormat.Pdf then use SaveFormat.Pdf
-            if format_or_options is PdfSaveOptions then use SaveFormat.Pdf with those options
-            if format_or_options is SaveOptions and opts.SaveFormat equals SaveFormat.Pdf then use SaveFormat.Pdf
-            otherwise raise UnsupportedSaveFormatException('Only PDF save is supported')
+          signature: (target:file-target|binary-output, format_or_options:SaveFormat|SaveOptions|null=null) -> void
+          format_resolution_logic[6]:
+            if format_or_options is null and target identifies a .pdf file then infer SaveFormat.Pdf and use default PdfSaveOptions
+            if format_or_options is null and target is a stream-like target then infer SaveFormat.Pdf and use default PdfSaveOptions
+            if format_or_options equals SaveFormat.Pdf then use default PdfSaveOptions
+            if format_or_options is a SaveOptions instance then use its SaveFormat and concrete option values
+            if the resolved save format is not SaveFormat.Pdf then raise UnsupportedSaveFormatException('Only PDF save is supported')
+            if a file target does not end with .pdf then raise UnsupportedSaveFormatException('Only .pdf file targets are supported for save operations')
           execution_logic:
-            steps[3]:
-              render current public DOM to PDF bytes using the current renderer
-              if options is PdfSaveOptions honor the currently supported subset (PageIndex, PageCount, TagIconDir, TagIconSize, TagIconGap)
-              write produced bytes to file path or stream target
+            steps[2]:
+              renders the current DOM to binary PDF content using the current renderer
+              writes the produced content to a file target or a stream-like target and raises an argument/type error for unsupported targets
+
+saving:
+  classes:
+    SaveOptions:
+      namespace: aspose.note.saving
+      base: reference type
+      pattern: abstract compatibility base for save options; direct instantiation is rejected
+      constructor:
+        signature: (save_format:SaveFormat, PageIndex:int=0, PageCount:int|null=null, FontsSubsystem:any|null=null)
+      properties:
+        SaveFormat: {type:SaveFormat,read_only:true,logic:target output format associated with the concrete options instance}
+        PageIndex: {type:integer,read_only:false,default:0,logic:index of the first page to render}
+        PageCount: {type:integer|null,read_only:false,default:null,logic:number of pages to render; null means all remaining pages}
+        FontsSubsystem: {type:any|null,read_only:false,default:null,logic:reserved compatibility slot for font-resolution settings}
+
+    PdfSaveOptions:
+      namespace: aspose.note.saving
+      base: SaveOptions
+      constructor:
+        signature: (PageIndex:int=0, PageCount:int|null=null, FontsSubsystem:any|null=null, ImageCompression:any|null=null, JpegQuality:int|null=null, PageSettings:any|null=null, PageSplittingAlgorithm:any|null=null)
+      properties:
+        SaveFormat: {type:SaveFormat,read_only:true,logic:defaults to SaveFormat.Pdf}
+        PageIndex: {type:integer,read_only:false,default:0,logic:inherited page-range start}
+        PageCount: {type:integer|null,read_only:false,default:null,logic:inherited page-range count}
+        FontsSubsystem: {type:any|null,read_only:false,default:null,logic:inherited font-resolution slot}
+        ImageCompression: {type:any|null,read_only:false,default:null,logic:reserved PDF-specific compatibility member}
+        JpegQuality: {type:integer|null,read_only:false,default:null,logic:reserved PDF-specific compatibility member}
+        PageSettings: {type:any|null,read_only:false,default:null,logic:reserved PDF-specific compatibility member}
+        PageSplittingAlgorithm: {type:any|null,read_only:false,default:null,logic:reserved PDF-specific compatibility member}
