@@ -79,7 +79,7 @@ def _decode_ascii_text(value: Any) -> str | None:
     if value is None:
         return None
     if isinstance(value, bytes):
-        for encoding in ("utf-8", "latin-1"):
+        for encoding in ("latin-1", "utf-8"):
             try:
                 return value.decode(encoding, errors="ignore").rstrip("\x00") or None
             except Exception:
