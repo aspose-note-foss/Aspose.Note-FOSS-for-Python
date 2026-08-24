@@ -481,7 +481,7 @@ class _Builder:
             )
             candidates.append((index, score, space))
 
-        candidates.sort(key=lambda item: (-item[1], item[0]))
+        candidates.sort(key=lambda item: item[0])
         return [space for _, _, space in candidates]
 
     def _build_logical_root(self) -> LogicalNode | None:
@@ -671,8 +671,6 @@ class _Builder:
             key=lambda entry: (
                 entry.section_order is None,
                 entry.section_order if entry.section_order is not None else 0,
-                entry.topology_timestamp is None,
-                entry.topology_timestamp if entry.topology_timestamp is not None else 0,
                 entry.space_order,
                 entry.page_order,
             )
