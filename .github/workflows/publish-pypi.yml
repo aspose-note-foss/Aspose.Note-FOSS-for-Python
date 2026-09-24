@@ -87,10 +87,13 @@ jobs:
     name: Publish to PyPI
     needs: [test, build]
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/aspose-note-foss
     permissions:
       contents: read
-      # If you use PyPI Trusted Publishing (OIDC), uncomment this and remove the token below.
-      # id-token: write
+      # Required for PyPI Trusted Publishing (OIDC).
+      id-token: write
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -100,7 +103,7 @@ jobs:
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          # For TestPyPI:
-          # repository-url: https://test.pypi.org/legacy/
+        # Authenticates via Trusted Publishing; no API token needed.
+        # For TestPyPI:
+        # with:
+        #   repository-url: https://test.pypi.org/legacy/

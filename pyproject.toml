@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aspose-note"
-version = "26.3.2"
+name = "aspose-note-foss"
+version = "26.9.0"
 description = "Aspose.Note-compatible Python API for reading OneNote (.one) files"
 readme = "README.md"
 requires-python = ">=3.10"

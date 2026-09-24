@@ -1,8 +1,8 @@
 # MS OneNote Examples
 
-Minimal, runnable scripts that use the PyPI package `aspose-note` to open and process **Microsoft OneNote** `.one` documents from `../testfiles`.
+Minimal, runnable scripts that use the PyPI package `aspose-note-foss` to open and process **Microsoft OneNote** `.one` documents from `../testfiles`.
 
-Third-party license notices (e.g., ReportLab used for PDF export) are in [THIRD_PARTY_NOTICES.md](https://github.com/aspose-note/aspose-note-python/blob/main/THIRD_PARTY_NOTICES.md).
+Third-party license notices (e.g., ReportLab used for PDF export) are in [THIRD_PARTY_NOTICES.md](https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python/blob/main/THIRD_PARTY_NOTICES.md).
 
 ## Install
 

@@ -1,8 +1,8 @@
 # Third-Party Notices (Examples)
 
-The scripts in this folder use the PyPI package `aspose-note` and may optionally use third-party software.
+The scripts in this folder use the PyPI package `aspose-note-foss` and may optionally use third-party software.
 
-For repository-wide notices, see [THIRD_PARTY_NOTICES.md](https://github.com/aspose-note/aspose-note-python/blob/main/THIRD_PARTY_NOTICES.md).
+For repository-wide notices, see [THIRD_PARTY_NOTICES.md](https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python/blob/main/THIRD_PARTY_NOTICES.md).
 
 ## ReportLab (used for PDF export)
 

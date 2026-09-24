@@ -1,6 +1,6 @@
 # Aspose.Note FOSS for Python
 
-[![PyPI version](https://img.shields.io/pypi/v/aspose-note.svg)](https://pypi.org/project/aspose-note/) [![Python Versions](https://img.shields.io/pypi/pyversions/aspose-note.svg)](https://pypi.org/project/aspose-note/) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![CI](https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python/actions/workflows/ci.yml/badge.svg)](https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/aspose-note-foss.svg)](https://pypi.org/project/aspose-note-foss/) [![Python Versions](https://img.shields.io/pypi/pyversions/aspose-note-foss.svg)](https://pypi.org/project/aspose-note-foss/) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![CI](https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python/actions/workflows/ci.yml/badge.svg)](https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python/actions/workflows/ci.yml)
 
 [![Aspose.Note FOSS for Python](https://products.aspose.org/media/note/python/banner-readme.png)](https://products.aspose.org/note/python/)
 
@@ -66,17 +66,17 @@ flowchart TD
 ## Installation
 
 ```bash
-pip install aspose-note
+pip install aspose-note-foss
 ```
 
 PDF export needs the optional `pdf` extra, which pulls in [ReportLab](https://pypi.org/project/reportlab/):
 
 ```bash
-pip install "aspose-note[pdf]"
+pip install "aspose-note-foss[pdf]"
 ```
 
-Requires Python 3.10 or later. The published PyPI distribution and the import package share the
-same name, `aspose.note` — `from aspose.note import Document`.
+Requires Python 3.10 or later. The PyPI distribution is named `aspose-note-foss`; the import package is
+`aspose.note` — `from aspose.note import Document`.
 
 ## Dependencies
 
@@ -86,7 +86,7 @@ No required third-party package dependencies.
 
 ### Optional Dependencies
 
-- `reportlab` — pulled in by the `pdf` extra (`pip install "aspose-note[pdf]"`); required only to export pages to PDF via `Document.Save(..., SaveFormat.Pdf)`.
+- `reportlab` — pulled in by the `pdf` extra (`pip install "aspose-note-foss[pdf]"`); required only to export pages to PDF via `Document.Save(..., SaveFormat.Pdf)`.
 - `pypdf`, `Pillow`, `PyMuPDF` — pulled in by the `test-pdf` extra; used by the PDF golden-output tests to compare generated PDFs against stored manifests, not by the library at runtime.
 
 ### Native and System Requirements
