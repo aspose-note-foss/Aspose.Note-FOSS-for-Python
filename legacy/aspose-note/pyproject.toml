@@ -1,0 +1,32 @@
+# Transitional package: "aspose-note" on PyPI was renamed to "aspose-note-foss".
+# This project ships no code; it only depends on the new distribution so that
+# existing `pip install aspose-note` users keep getting the library.
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aspose-note"
+version = "26.9.0"
+description = "Renamed: this package is now aspose-note-foss. Install aspose-note-foss instead."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{name = "Aspose"}]
+classifiers = [
+	"Development Status :: 7 - Inactive",
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3 :: Only",
+]
+dependencies = ["aspose-note-foss>=26.9.0"]
+
+[project.optional-dependencies]
+pdf = ["aspose-note-foss[pdf]>=26.9.0"]
+
+[project.urls]
+Homepage = "https://pypi.org/project/aspose-note-foss/"
+Repository = "https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python"
+Issues = "https://github.com/aspose-note-foss/Aspose.Note-FOSS-for-Python/issues"
+
+[tool.setuptools]
+packages = []
