@@ -244,7 +244,12 @@ class _PropertyState:
 
 
 def _read_guid(data: bytes, offset: int) -> str:
-    return str(uuid.UUID(bytes_le=data[offset : offset + 16]))
+    chunk = data[offset : offset + 16]
+    if len(chunk) < 16:
+        # Best-effort: a truncated GUID in a corrupt file is zero-padded so
+        # parsing continues instead of raising ValueError.
+        chunk = chunk.ljust(16, b"\x00")
+    return str(uuid.UUID(bytes_le=chunk))
 
 
 def _read_extended_guid(data: bytes, offset: int) -> ExtendedGUID:
@@ -317,6 +322,11 @@ def _parse_property_set(data: bytes, offset: int, state: _PropertyState) -> tupl
         return {}, [], 0
     property_count = struct.unpack_from("<H", data, offset)[0]
     offset += 2
+    # Best-effort: clamp to the property ids actually present so a truncated
+    # declaration does not read past the end of the buffer.
+    available_property_ids = max((len(data) - offset) // 4, 0)
+    if property_count > available_property_ids:
+        property_count = available_property_ids
     property_ids = [struct.unpack_from("<I", data, offset + index * 4)[0] for index in range(property_count)]
     offset += property_count * 4
     data_offset = offset
@@ -394,11 +404,19 @@ def _parse_property_set(data: bytes, offset: int, state: _PropertyState) -> tupl
         try:
             value = read_value(property_type)
         except Exception:
-            if property_type == default_property_type:
-                raise
+            # Best-effort: on a truncated/corrupt buffer, retry with the declared
+            # type when an override was applied, otherwise stop reading the rest
+            # of the set instead of letting struct.error reach the caller.
             data_offset = snapshot_offset
             state.oid_cursor = snapshot_oid_cursor
-            value = read_value(default_property_type)
+            if property_type == default_property_type:
+                break
+            try:
+                value = read_value(default_property_type)
+            except Exception:
+                data_offset = snapshot_offset
+                state.oid_cursor = snapshot_oid_cursor
+                break
 
         _merge_property(properties, name, value)
         raw_properties.append((name, value))
