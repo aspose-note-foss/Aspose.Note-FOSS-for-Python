@@ -5,7 +5,7 @@
     {
       "image_count": 0,
       "index": 0,
-      "layout_digest": "50b8724f6717952eb05ac7fafdbeca7cf32da1ef3e1a257afd204d6bf4572bd0",
+      "layout_digest": "0d655bb73129db764e69529480d18a91553324967259cb7f8cfa6986b97d8d5a",
       "layout_ops": [
         "cm 1 0 0 1 0 0",
         "BT",
@@ -48,7 +48,7 @@
         "ET",
         "rg 0 0 0",
         "BT",
-        "Tm 1 0 0 1 36 754.59",
+        "Tm 1 0 0 1 72 668.19",
         "Tj <str>",
         "T*",
         "ET"
@@ -59,7 +59,7 @@
     {
       "image_count": 0,
       "index": 1,
-      "layout_digest": "50b8724f6717952eb05ac7fafdbeca7cf32da1ef3e1a257afd204d6bf4572bd0",
+      "layout_digest": "0d655bb73129db764e69529480d18a91553324967259cb7f8cfa6986b97d8d5a",
       "layout_ops": [
         "cm 1 0 0 1 0 0",
         "BT",
@@ -102,7 +102,7 @@
         "ET",
         "rg 0 0 0",
         "BT",
-        "Tm 1 0 0 1 36 754.59",
+        "Tm 1 0 0 1 72 668.19",
         "Tj <str>",
         "T*",
         "ET"
