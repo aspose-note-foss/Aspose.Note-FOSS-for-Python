@@ -79,9 +79,12 @@ def _decode_ascii_text(value: Any) -> str | None:
     if value is None:
         return None
     if isinstance(value, bytes):
-        for encoding in ("utf-8", "latin-1"):
+        # TextExtendedAscii is a Windows single-byte codepage, not UTF-8. Prefer a
+        # strict UTF-8 pass for genuine UTF-8, then fall back to cp1252 (Windows-1252)
+        # so umlauts and typographic punctuation decode instead of being dropped.
+        for encoding, errors in (("utf-8", "strict"), ("cp1252", "ignore")):
             try:
-                return value.decode(encoding, errors="ignore").rstrip("\x00") or None
+                return value.decode(encoding, errors=errors).rstrip("\x00") or None
             except Exception:
                 continue
         return None
