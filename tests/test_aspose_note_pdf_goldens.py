@@ -83,7 +83,7 @@ class TestAsposeNotePdfGoldens(unittest.TestCase):
                         f"PDF golden mismatch for {case.case_id}.\n"
                         f"Generated PDF: {generated_pdf}\n"
                         f"Generated manifest: {generated_manifest}\n"
-                        f"Comparison mode: semantic manifest (text, links, image_count, page_count)\n"
+                        f"Comparison mode: semantic manifest (text, links, image_count, page_count, layout_digest)\n"
                         f"Visual artifacts: {visual_artifacts or 'not available'}\n"
                         f"Manifest diff:\n{diff}"
                     )

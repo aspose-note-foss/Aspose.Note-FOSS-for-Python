@@ -5,7 +5,7 @@
     {
       "image_count": 0,
       "index": 0,
-      "layout_digest": "c46f856d5fdab77740e070075957b6085f077d12d2a00d970f5aba45b965736b",
+      "layout_digest": "10b4a1748181ab9a98ad96e0eef087c70d794f1bc0181bb6c8cf64244e0eb244",
       "layout_ops": [
         "cm 1 0 0 1 0 0",
         "BT",
@@ -46,7 +46,7 @@
         "ET",
         "rg 0 0 0",
         "BT",
-        "Tm 1 0 0 1 72 668.19",
+        "Tm 1 0 0 1 36 754.59",
         "Tj <str>",
         "T*",
         "ET"

@@ -267,6 +267,7 @@ def semantic_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
             "text": page["text"],
             "links": page["links"],
             "image_count": page["image_count"],
+            "layout_digest": page.get("layout_digest"),
         }
         for page in manifest.get("pages", [])
     ]
